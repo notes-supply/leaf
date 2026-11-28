@@ -74,6 +74,7 @@ import {
 } from "./schemas.ts";
 import {
   CallBody,
+  CallUnchecked,
   OpenBody,
   SittingMissing,
   SittingPlayed,
@@ -373,7 +374,7 @@ export class GameSittingsApi extends HttpApiGroup.make("gameSittings")
     HttpApiEndpoint.post("callSitting", "/sittings/call", {
       payload: CallBody,
       success: SittingShown,
-      error: [Invalid, NotYou, SittingRefused, SittingUpdating, SlowDown],
+      error: [Invalid, NotYou, SittingRefused, SittingUpdating, CallUnchecked, SlowDown],
     }).middleware(SittingBodyErrors),
     HttpApiEndpoint.get("sittingRecord", "/sittings/record", { success: SittingRecord }),
     HttpApiEndpoint.get("sitting", "/sittings/:id", {

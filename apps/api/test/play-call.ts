@@ -9,18 +9,20 @@
  * Discord's own app: `/test/discord/?as=<name>&instance=<launch>` is a page that frames the raid as
  * Discord does (`/` with Discord's launch query), and answers the raid's SDK as Discord's app would:
  * greeted, it says it is ready; asked to sign in, it gives the code for `<name>`; handed the token,
- * it says who that is. Everyone opened with the same `instance` is in one call. Nothing leaves the
- * machine. SIGTERM or Ctrl-C stops it.
+ * it says who that is. Opening that page puts `<name>` in the call `<launch>`, as Discord has
+ * everyone who opens a launch in it, and Discord's API says so when Leaf asks who is in it (with the
+ * bot's token). Nothing leaves the machine. SIGTERM or Ctrl-C stops it.
  */
 import { resolve } from "node:path";
 
 import { Effect, Layer, Redacted } from "effect";
-import { HttpRouter, HttpServerResponse } from "effect/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 
-import { DISCORD_API } from "../src/http/activity.ts";
+import { DISCORD_API } from "../src/config.ts";
 import { fakeBackend, type Fetcher, type TestClock, testLeaf } from "./support.ts";
 
 const CLIENT = "1576204968619417712";
+const BOT = "standing-in-bot";
 const [portText = "", publicDirText = ""] = process.argv.slice(2);
 const port = Number(portText);
 if (!Number.isInteger(port) || port <= 0 || port > 65_535 || publicDirText === "") {
@@ -38,12 +40,26 @@ const idOf = (name: string): string => {
   return id;
 };
 
-/** Discord's API as Leaf asks it: a code `as-<name>` traded for `<name>`'s token, and who a token is. */
+/** Who is in each call, by launch: everyone who opened Discord's stand-in page for it. */
+const calls = new Map<string, Set<string>>();
+const LAUNCH = new RegExp(`^${DISCORD_API}/applications/${CLIENT}/activity-instances/([^/]+)$`);
+
+/**
+ * Discord's API as Leaf asks it: a code `as-<name>` traded for `<name>`'s token, who a token is, and
+ * who is in a launch.
+ */
 const discord =
   (backend: Fetcher): Fetcher =>
   async (url, init) => {
     if (!url.startsWith(`${DISCORD_API}/`)) return backend(url, init);
     const request = new Request(url, init);
+    const launch = LAUNCH.exec(url)?.[1];
+    if (launch !== undefined && request.headers.get("Authorization") === `Bot ${BOT}`) {
+      const users = calls.get(decodeURIComponent(launch));
+      return users === undefined
+        ? Response.json({ message: "404: Not Found", code: 0 }, { status: 404 })
+        : Response.json({ instance_id: launch, users: [...users].map(idOf) });
+    }
     if (url.endsWith("/oauth2/token")) {
       const code = new URLSearchParams(await request.text()).get("code") ?? "";
       if (!code.startsWith("as-")) return Response.json({ error: "invalid_grant" }, { status: 400 });
@@ -110,7 +126,7 @@ const clock: TestClock = {
 const leaf = testLeaf(clock, discord(fetcher), {
   publicDir: resolve(publicDirText),
   publicOrigin: origin,
-  activity: { clientId: CLIENT, clientSecret: Redacted.make("standing-in"), origin },
+  activity: { clientId: CLIENT, clientSecret: Redacted.make("standing-in"), botToken: Redacted.make(BOT), origin },
 });
 const served = await leaf.serve(
   port,
@@ -118,15 +134,20 @@ const served = await leaf.serve(
     HttpRouter.add(
       "GET",
       "/test/discord/",
-      Effect.succeed(
-        HttpServerResponse.text(DISCORD_APP, {
+      Effect.map(HttpServerRequest.HttpServerRequest, (request) => {
+        // Opening the raid in a call puts you in it, as far as Discord is concerned.
+        const query = new URL(request.url, origin).searchParams;
+        const launch = query.get("instance") || "i-1-gc-1-1";
+        const into = calls.get(launch) ?? new Set<string>();
+        calls.set(launch, into.add(query.get("as") || "ann"));
+        return HttpServerResponse.text(DISCORD_APP, {
           contentType: "text/html",
           headers: {
             "content-security-policy":
               "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src 'self'",
           },
-        }),
-      ),
+        });
+      }),
     ),
   ),
 );

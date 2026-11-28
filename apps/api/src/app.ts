@@ -35,6 +35,7 @@ import { PlayStore } from "./play/store.ts";
 import { Logins } from "./players/logins.ts";
 import { Purchases } from "./purchases/store.ts";
 import { Quests } from "./quests/store.ts";
+import { CallMembers } from "./sittings/members.ts";
 import { Sittings } from "./sittings/service.ts";
 import { Tallies } from "./tally/store.ts";
 
@@ -139,6 +140,7 @@ export const Stores = Layer.mergeAll(
 export const Services = Layer.mergeAll(
   Play.layer,
   Sittings.layer,
+  CallMembers.layer,
   Credits.layer,
   Live.layer.pipe(Layer.provide(LiveTuned)),
 ).pipe(

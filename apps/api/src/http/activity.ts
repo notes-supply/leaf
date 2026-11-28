@@ -23,13 +23,11 @@ import { SqlClient } from "effect/sql";
 
 import { frameCookie, SignIns } from "../auth/sign-ins.ts";
 import { askBackend, logFailure } from "../backend/failure.ts";
-import { type Activity, AppConfig, fromLeafPage } from "../config.ts";
+import { type Activity, AppConfig, DISCORD_API, fromLeafPage } from "../config.ts";
 import { discordPlayer } from "../players/link.ts";
 import type { Logins } from "../players/logins.ts";
 import { DiscordId } from "../wire.ts";
 
-/** Discord's API, as its own guide for these frames asks it. */
-export const DISCORD_API = "https://discord.com/api/v10";
 /** How long Discord has to answer each question. */
 const ASK_WITHIN = Duration.seconds(5);
 

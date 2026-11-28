@@ -67,6 +67,11 @@ export class SittingMissing extends Schema.Error<SittingMissing>("SittingMissing
   httpApiStatus: 404,
 }) {}
 
+/** Discord could not say who is in a call (Leaf has no way to ask it, or it did not answer): nobody was seated. */
+export class CallUnchecked extends Schema.Error<CallUnchecked>("CallUnchecked")(answer("call_unchecked"), {
+  httpApiStatus: 503,
+}) {}
+
 /** A sitting a newer Leaf stored, as one runs beside this one in a deploy: nothing was done, and it is left as it is. */
 export class SittingUpdating extends Schema.Error<SittingUpdating>("SittingUpdating")(answer("sitting_updating"), {
   httpApiStatus: 503,
@@ -74,9 +79,10 @@ export class SittingUpdating extends Schema.Error<SittingUpdating>("SittingUpdat
 
 /**
  * A sitting not opened or sat at: the caller is seated at another, as many are going as may be, or
- * (in a Discord call) the call's has started without them. Nothing was done.
+ * (in a Discord call) the call's has started without them, or Discord says they are not in the call.
+ * Nothing was done.
  */
 export class SittingRefused extends Schema.Error<SittingRefused>("SittingRefused")(
-  answer("seated_elsewhere", "sittings_full", "table_started"),
+  answer("seated_elsewhere", "sittings_full", "table_started", "not_in_call"),
   { httpApiStatus: 409 },
 ) {}

@@ -36,6 +36,7 @@ import { MetricsListener, metricsText, RuntimeMetrics } from "../src/metrics.ts"
 import { GAMES } from "../src/play/games.ts";
 import { type JobTimes, Play, PlayMeter } from "../src/play/service.ts";
 import { PlayStore } from "../src/play/store.ts";
+import { CallMembers } from "../src/sittings/members.ts";
 import { Sittings } from "../src/sittings/service.ts";
 
 export const MINUTE = 60_000;
@@ -260,7 +261,9 @@ export function testLeaf(clock: TestClock, fetcher: Fetcher, config: Partial<Set
     Play.useSync((real) => fakes.playing?.(real) ?? real),
   ).pipe(Layer.provide(Play.layer));
   const layer = Layer.merge(
-    Layer.mergeAll(playing, credits, Sittings.layer).pipe(Layer.provideMerge(between.pipe(Layer.provideMerge(stores)))),
+    Layer.mergeAll(playing, credits, Sittings.layer, CallMembers.layer).pipe(
+      Layer.provideMerge(between.pipe(Layer.provideMerge(stores))),
+    ),
     live,
   ).pipe(
     Layer.provideMerge(Watchers.layer),

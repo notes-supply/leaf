@@ -4,8 +4,9 @@ import { HttpApiBuilder } from "effect/http-api";
 import { Visits } from "../../activity/visits.ts";
 import { CurrentIdentity, type Identity, LeafApi, SittingBodyErrors } from "../../api/api.ts";
 import { Invalid, SlowDown } from "../../api/errors.ts";
-import { SittingMissing, SittingRefused, SittingUpdating } from "../../api/sittings.ts";
+import { CallUnchecked, SittingMissing, SittingRefused, SittingUpdating } from "../../api/sittings.ts";
 import type { Joining } from "../../sittings/calls.ts";
+import { CallMembers } from "../../sittings/members.ts";
 import { type Caller, type Opening, type Shown, Sittings } from "../../sittings/service.ts";
 import { payloadError } from "./middleware.ts";
 import { iso, notYou, unreadable } from "./shared.ts";
@@ -22,6 +23,12 @@ const updating = new SittingUpdating({
   code: "sitting_updating",
   message: "This table is being updated. Try again in a moment.",
 });
+/** Discord could not say who is in the call: nobody is seated on the page's word. */
+const unchecked = new CallUnchecked({
+  code: "call_unchecked",
+  message: "Can't check this call right now. Try again in a moment",
+});
+const notInCall = new SittingRefused({ code: "not_in_call", message: "You are not in this call" });
 const slow = new SlowDown({
   code: "slow_down",
   message: "Commands are coming faster than Leaf takes them. Send them again in a moment",
@@ -80,6 +87,7 @@ export const GameSittingsHandlers = HttpApiBuilder.group(LeafApi, "gameSittings"
   Effect.gen(function* () {
     const sittings = yield* Sittings;
     const visits = yield* Visits;
+    const members = yield* CallMembers;
     return (
       handlers
         .handle("sittings", () =>
@@ -101,11 +109,16 @@ export const GameSittingsHandlers = HttpApiBuilder.group(LeafApi, "gameSittings"
             return yield* opened(made);
           }),
         )
-        // The table of a launch in a Discord call: the caller's, opened or sat at, or why not.
+        // The table of a launch in a Discord call: the caller's, opened or sat at, or why not. Only
+        // someone Discord has in the launch sits at it, never on the page's word.
         .handle("callSitting", ({ payload }) =>
           Effect.gen(function* () {
             const identity = yield* CurrentIdentity;
             if (payload.player !== identity.playerId) return yield* notYou;
+            const { discord } = identity;
+            const inCall = discord === null ? "out" : yield* members.check(payload.instance, discord);
+            if (inCall === "unchecked") return yield* unchecked;
+            if (inCall === "out") return yield* notInCall;
             const at = yield* sittings.join(callerOf(identity), payload.instance);
             if (at.status === "shown") yield* visits.acted(identity.playerId, yield* Clock.currentTimeMillis);
             return yield* joined(at);

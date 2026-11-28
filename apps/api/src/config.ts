@@ -73,14 +73,19 @@ export interface Settings {
 
 /**
  * The Discord application the raid runs in inside a call: its client id, its secret, which Leaf
- * trades a page's sign-in code for the player's token with, and the origin Discord serves the
- * raid's pages from, `https://<client id>.discordsays.com`, which proxies them from Leaf.
+ * trades a page's sign-in code for the player's token with, its bot's token, which Leaf asks Discord
+ * who is in a call with (without it nobody is seated at a call's table), and the origin Discord serves
+ * the raid's pages from, `https://<client id>.discordsays.com`, which proxies them from Leaf.
  */
 export interface Activity {
   readonly clientId: string;
   readonly clientSecret: Redacted.Redacted;
+  readonly botToken: Redacted.Redacted | undefined;
   readonly origin: string;
 }
+
+/** Discord's API, as its guides for the raid's frame ask it. */
+export const DISCORD_API = "https://discord.com/api/v10";
 
 /** Whether an `Origin` is one of Leaf's own pages': at its public origin, or in a Discord call. */
 export const fromLeafPage = (settings: Settings, origin: string | undefined): boolean =>
@@ -171,6 +176,7 @@ export const settings: Config.Config<Settings> = Config.all({
     Config.schema(Schema.String.check(Schema.isPattern(/^[0-9]{5,25}$/)), "LEAF_ACTIVITY_CLIENT_ID"),
   ),
   activityClientSecret: optional(Config.Redacted("LEAF_ACTIVITY_CLIENT_SECRET")),
+  activityBotToken: optional(Config.Redacted("LEAF_ACTIVITY_BOT_TOKEN")),
 }).pipe(
   Config.map((read): Settings => {
     const { databasePath, endpoint, bucket, accessKeyId, secretAccessKey, activityClientId: clientId } = read;
@@ -204,7 +210,12 @@ export const settings: Config.Config<Settings> = Config.all({
       activity:
         clientId === undefined || clientSecret === undefined
           ? undefined
-          : { clientId, clientSecret, origin: `https://${clientId}.discordsays.com` },
+          : {
+              clientId,
+              clientSecret,
+              botToken: read.activityBotToken,
+              origin: `https://${clientId}.discordsays.com`,
+            },
     };
   }),
 );

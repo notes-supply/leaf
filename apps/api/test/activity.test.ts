@@ -4,7 +4,7 @@ import { playerId } from "@sequoia-leaf/core";
 import { CHAIRS } from "@sequoia-leaf/raid/sitting/sitting.ts";
 import { Redacted, Schema } from "effect";
 
-import { DISCORD_API } from "../src/http/activity.ts";
+import { DISCORD_API } from "../src/config.ts";
 import { discordOf, fakeBackend, type Fetcher, sessionOf, testLeaf } from "./support.ts";
 
 /** Wednesday 25 November 2026, 12:00 UTC. */
@@ -14,25 +14,49 @@ const CLIENT = "1576204968619417712";
 /** Where Discord serves the raid in a call, proxying Leaf. */
 const FRAME = `https://${CLIENT}.discordsays.com`;
 const SECRET = "the-application-secret";
+const BOT = "the-bot-token";
 const alice = playerId("10000000-0000-0000-0000-000000000001");
 
 /**
- * A stand-in Discord: codes it would take, each for an account, and the tokens they give. With `down`
- * it does not answer at all; with `failing` it answers 500.
+ * A stand-in Discord: codes it would take, each for an account, and the tokens they give; and its
+ * launches of the raid, each with the Discord ids in it. With `down` it does not answer at all; with
+ * `failing` it answers 500.
  */
 interface Discord {
   codes: Record<string, { id: string; username: string }>;
+  instances: Record<string, string[]>;
   down: boolean;
   failing: boolean;
   /** The form of every code traded, as Discord got it. */
   readonly traded: URLSearchParams[];
+  /** Every launch Leaf asked about, in order. */
+  readonly asked: string[];
 }
 
 let discord: Discord;
+/** Leaf's clock, set by hand. */
+const clock = { now: T0 };
 let leafs: ReturnType<typeof testLeaf>;
 let app: ReturnType<(typeof leafs)["app"]>;
 
-/** Discord's two routes Leaf asks, around the backend's stand-in. */
+/** A launch as Discord answers for it, with the bot's token: who is in it, or 404 for one it does not know. */
+function instanceAnswer(request: Request, instance: string): Response {
+  if (request.headers.get("Authorization") !== `Bot ${BOT}`)
+    return Response.json({ message: "401: Unauthorized" }, { status: 401 });
+  discord.asked.push(instance);
+  const users = discord.instances[instance];
+  return users === undefined
+    ? Response.json({ message: "404: Not Found", code: 0 }, { status: 404 })
+    : Response.json({
+        application_id: CLIENT,
+        instance_id: instance,
+        launch_id: "1",
+        location: { id: "gc-1-2", kind: "gc", channel_id: "2", guild_id: "1" },
+        users,
+      });
+}
+
+/** Discord's routes Leaf asks, around the backend's stand-in. */
 function withDiscord(backend: Fetcher): Fetcher {
   return async (url, init) => {
     if (!url.startsWith(`${DISCORD_API}/`)) return backend(url, init);
@@ -50,6 +74,9 @@ function withDiscord(backend: Fetcher): Fetcher {
       delete discord.codes[form.get("code") ?? ""];
       return Response.json({ access_token: `token-of-${user.id}`, token_type: "Bearer", expires_in: 604800 });
     }
+    const instance = new RegExp(`^/applications/${CLIENT}/activity-instances/(.+)$`).exec(path)?.[1];
+    if (instance !== undefined && request.method === "GET")
+      return instanceAnswer(request, decodeURIComponent(instance));
     if (path === "/users/@me") {
       const id = /^Bearer token-of-(\d+)$/.exec(request.headers.get("Authorization") ?? "")?.[1];
       const user = Object.values(known).find((u) => u.id === id);
@@ -71,14 +98,17 @@ function codeFor(n: number, id = `2${String(n).padStart(17, "0")}`): string {
   return `code-${n}`;
 }
 
-function start(activity = true) {
-  discord = { codes: {}, down: false, failing: false, traded: [] };
+/** A Leaf with the Discord application (`activity`), and its bot's token (`bot`). */
+function start(activity = true, bot = true) {
+  discord = { codes: {}, instances: {}, down: false, failing: false, traded: [], asked: [] };
   known = {};
+  clock.now = T0;
   const { fetcher } = fakeBackend({ "alice-token": () => Response.json(sessionOf(alice, "Alice")) });
+  const botToken = bot ? Redacted.make(BOT) : undefined;
   leafs = testLeaf(
-    { now: T0 },
+    clock,
     withDiscord(fetcher),
-    activity ? { activity: { clientId: CLIENT, clientSecret: Redacted.make(SECRET), origin: FRAME } } : {},
+    activity ? { activity: { clientId: CLIENT, clientSecret: Redacted.make(SECRET), botToken, origin: FRAME } } : {},
   );
   app = leafs.app();
 }
@@ -256,13 +286,28 @@ const Seated = Schema.Struct({
   }),
 });
 
-/** A player signed in in the frame: their token and id. */
-async function player(n: number): Promise<{ token: string; id: string }> {
-  const token = await signedIn(n);
-  return { token, id: (await me(token)).player.id };
+/** A player signed in in the frame: their token, their Leaf id, and their Discord id. */
+interface Signed {
+  readonly token: string;
+  readonly id: string;
+  readonly discord: string;
 }
-/** `who` opens the raid in the launch `instance`, as the page does once signed in. */
-async function join(who: { token: string; id: string }, instance: string) {
+async function player(n: number): Promise<Signed> {
+  const token = await signedIn(n);
+  return { token, id: (await me(token)).player.id, discord: `2${String(n).padStart(17, "0")}` };
+}
+/** Discord has `who` in the launch `instance`, as it has everyone who opens it. */
+function intoCall(who: Signed, instance: string): void {
+  const users = (discord.instances[instance] ??= []);
+  if (!users.includes(who.discord)) users.push(who.discord);
+}
+/** `who` opens the raid in the launch `instance` as the page does once signed in, Discord having them in it. */
+function join(who: Signed, instance: string) {
+  intoCall(who, instance);
+  return ask(who, instance);
+}
+/** `who` asks for the table of the launch `instance`, whoever Discord has in it. */
+async function ask(who: Signed, instance: string) {
   const response = await app.request("/v1/game/sittings/call", {
     method: "POST",
     headers: { Cookie: `__Host-leaf_session=${who.token}`, Origin: FRAME, "Content-Type": "application/json" },
@@ -277,6 +322,7 @@ describe("a call's table", () => {
   it("seats everyone who opens one launch at one table, in the order they came, the first having opened it", async () => {
     const first = await player(1);
     const second = await player(2);
+    for (const who of [first, second]) intoCall(who, "i-100-gc-1-2");
 
     const opened = await join(first, "i-100-gc-1-2");
     const sat = await join(second, "i-100-gc-1-2");
@@ -292,6 +338,7 @@ describe("a call's table", () => {
     const players = [];
     // oxlint-disable-next-line no-await-in-loop -- one after another, in order
     for (let n = 1; n <= CHAIRS + 1; n++) players.push(await player(n));
+    for (const who of players) intoCall(who, "i-200-gc-1-2");
 
     const answers = [];
     // oxlint-disable-next-line no-await-in-loop -- they come one after another, in order
@@ -322,6 +369,7 @@ describe("a call's table", () => {
   it("opens the launch's next table once its last is over", async () => {
     const first = await player(1);
     const second = await player(2);
+    for (const who of [first, second]) intoCall(who, "i-400-gc-1-2");
     const before = seated((await join(first, "i-400-gc-1-2")).body).id;
     // The only one sat gets up: the table is over.
     const left = await app.request(`/v1/game/sittings/${before}`, {
@@ -341,6 +389,7 @@ describe("a call's table", () => {
   it("gets someone up from another call's table that has not started, as they join another call", async () => {
     const first = await player(1);
     const second = await player(2);
+    for (const who of [first, second]) intoCall(who, "i-600-gc-1-2");
     const old = seated((await join(first, "i-600-gc-1-2")).body).id;
     expect((await join(second, "i-600-gc-1-2")).status).toBe(200);
     // A minute on, so that opening another is not too soon.
@@ -382,5 +431,84 @@ describe("a call's table", () => {
       status: 409,
       body: { code: "not_you" },
     });
+  });
+});
+
+/** What a call's table answers when Discord cannot say who is in the call. */
+const CANNOT = {
+  status: 503,
+  body: { code: "call_unchecked", message: "Can't check this call right now. Try again in a moment" },
+};
+const NOT_IN = { status: 409, body: { code: "not_in_call", message: "You are not in this call" } };
+const sittingsMade = () => leafs.query((sql) => sql`SELECT count(*) AS n FROM raid_sittings`);
+
+describe("who sits at a call's table, as Discord says", () => {
+  it("seats someone Discord has in the launch, and turns away someone it has not", async () => {
+    const inside = await player(1);
+    const outside = await player(2);
+
+    expect((await join(inside, "i-800-gc-1-2")).status).toBe(200);
+    // A second on: someone missing from Discord's kept answer has it asked again.
+    clock.now += 2000;
+    expect(await ask(outside, "i-800-gc-1-2")).toEqual(NOT_IN);
+    expect(discord.asked).toEqual(["i-800-gc-1-2", "i-800-gc-1-2"]);
+  });
+
+  it("turns everyone away from a launch Discord does not know, and opens nothing", async () => {
+    const who = await player(1);
+
+    expect(await ask(who, "i-made-up")).toEqual(NOT_IN);
+    expect(await sittingsMade()).toEqual([{ n: 0 }]);
+  });
+
+  it("asks Discord once for a call's arrivals together, again for one who came after, and not for each try of an outsider", async () => {
+    const [a, b, c, d, e] = [await player(1), await player(2), await player(3), await player(4), await player(5)];
+    for (const who of [a, b, c]) intoCall(who, "i-810-gc-1-2");
+
+    // oxlint-disable-next-line no-await-in-loop -- they come one after another
+    for (const who of [a, b, c]) expect((await ask(who, "i-810-gc-1-2")).status).toBe(200);
+    expect(discord.asked).toHaveLength(1);
+
+    // d comes into the call after Discord's answer: asked again, once that answer is a second old.
+    intoCall(d, "i-810-gc-1-2");
+    clock.now += 2000;
+    expect((await ask(d, "i-810-gc-1-2")).status).toBe(200);
+    expect(discord.asked).toHaveLength(2);
+
+    // Someone outside the call trying again and again within that second asks Discord nothing more.
+    expect([await ask(e, "i-810-gc-1-2"), await ask(e, "i-810-gc-1-2")]).toEqual([NOT_IN, NOT_IN]);
+    expect(discord.asked).toHaveLength(2);
+
+    // Discord's answer is kept a few seconds only.
+    clock.now += 10_000;
+    expect((await ask(a, "i-810-gc-1-2")).status).toBe(200);
+    expect(discord.asked).toHaveLength(3);
+  });
+
+  it("seats nobody without the bot's token to ask Discord with", async () => {
+    await app.dispose();
+    await leafs.dispose();
+    start(true, false);
+    const who = await player(1);
+
+    expect(await join(who, "i-820-gc-1-2")).toEqual(CANNOT);
+    expect(discord.asked).toEqual([]);
+    expect(await sittingsMade()).toEqual([{ n: 0 }]);
+  });
+
+  it("seats nobody when Discord does not answer, and asks it again the next time", async () => {
+    const who = await player(1);
+    intoCall(who, "i-830-gc-1-2");
+
+    discord.down = true;
+    const down = await ask(who, "i-830-gc-1-2");
+    discord.down = false;
+    discord.failing = true;
+    const failing = await ask(who, "i-830-gc-1-2");
+    discord.failing = false;
+
+    expect([down, failing]).toEqual([CANNOT, CANNOT]);
+    expect(await sittingsMade()).toEqual([{ n: 0 }]);
+    expect((await ask(who, "i-830-gc-1-2")).status).toBe(200);
   });
 });
