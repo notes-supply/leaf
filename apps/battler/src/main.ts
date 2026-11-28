@@ -73,11 +73,13 @@ const NOT_KEPT = "This browser did not keep your sign-in.";
 const callCard = (why: string): void => pageCard("The raid did not open", why, "Try again", () => outside.reload());
 
 /**
- * Where the game is (`start()`); in a Discord call, once Discord has signed the player in, before
- * anything is asked of Leaf. Null where the call's card says why the raid will not open.
+ * Where the game is (`start()`), with the page watched; in a call, once Discord has signed the player
+ * in, as the watch asks who they are as it starts. Null where the call's card says why the raid will
+ * not open.
  */
 async function signedIn(): Promise<Where | null> {
   const refused = LAUNCH ? await signInToCall() : null;
+  watchPage("battler");
   const where = refused === null ? await start() : null;
   const kept = !(LAUNCH && where?.mode === "shut" && where.why === "signedout");
   if (where !== null && kept) return where;
@@ -152,7 +154,6 @@ const STAGE: stage.Hooks = {
 async function boot(): Promise<void> {
   await fontsReady();
   // Who the member is, and then the table as Leaf has it. Without Leaf there is no table.
-  watchPage("battler");
   const where = await signedIn();
   if (where === null) return;
   if (where.mode === "shut") {

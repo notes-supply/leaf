@@ -338,6 +338,42 @@ describe("a call's table", () => {
     expect(seated(next.body).state.stage).toEqual({ at: "open", sat: [{ name: "player2" }] });
   });
 
+  it("gets someone up from another call's table that has not started, as they join another call", async () => {
+    const first = await player(1);
+    const second = await player(2);
+    const old = seated((await join(first, "i-600-gc-1-2")).body).id;
+    expect((await join(second, "i-600-gc-1-2")).status).toBe(200);
+    // A minute on, so that opening another is not too soon.
+    await leafs.query((sql) => sql`UPDATE raid_sittings SET opened_at = opened_at - 120000`);
+
+    const moved = await join(first, "i-601-gc-1-2");
+
+    expect(moved.status).toBe(200);
+    expect(seated(moved.body).id).not.toBe(old);
+    // The old call's table goes on without them.
+    expect(seated((await join(second, "i-600-gc-1-2")).body).state.stage).toEqual({
+      at: "open",
+      sat: [{ name: "player2" }],
+    });
+  });
+
+  it("leaves someone at a table anyone may sit at where they are, and says they are at another", async () => {
+    const first = await player(1);
+    const open = await app.request("/v1/game/sittings", {
+      method: "POST",
+      headers: { Cookie: `__Host-leaf_session=${first.token}`, Origin: FRAME, "Content-Type": "application/json" },
+      body: JSON.stringify({ player: first.id }),
+    });
+    expect(open.status).toBe(200);
+    // A minute on, so that opening another is not too soon.
+    await leafs.query((sql) => sql`UPDATE raid_sittings SET opened_at = opened_at - 120000`);
+
+    expect(await join(first, "i-700-gc-1-2")).toEqual({
+      status: 409,
+      body: { code: "seated_elsewhere", message: "You are at another table." },
+    });
+  });
+
   it("takes a launch only as Discord names one, from the player the page says it is", async () => {
     const first = await player(1);
     expect((await join(first, "")).status).toBe(400);

@@ -3,7 +3,9 @@
  * names a launch (its `instance`), and everyone who opens it sits at that launch's sitting: the first
  * to come opens it, the next sit down in order until it starts (when it starts is the sitting's own
  * rule: whoever opened it says so, or the eighth to sit). Anyone who comes once it has started is
- * turned away; once it is over, the next to come opens the launch's next. Leaf keeps which sitting a
+ * turned away; once it is over, the next to come opens the launch's next. Someone sat at another
+ * launch's sitting that has not started has left that call: they get up from it as they come (one sat
+ * at a table anyone may sit at is left there, and told they are at another). Leaf keeps which sitting a
  * launch sits at (`raid_sitting_calls`); the page says only the launch. A launch's sitting is its own:
  * it is not among the open sittings anyone may sit at.
  *
@@ -66,12 +68,23 @@ export function joinOf(
         : ({ status: "started" } satisfies Joining);
     });
 
+  /** The caller up from another launch's sitting (not `here`) that has not started: they have left that call. */
+  const leaveOtherCall = (caller: Caller, here: string | null) =>
+    Effect.gen(function* () {
+      const seat = Option.getOrNull(yield* store.seatOf(caller.playerId));
+      if (seat === null || seat === here || !(yield* store.isCall(seat))) return;
+      const brought = yield* bring(seat);
+      if (typeof brought === "string" || brought.sitting.stage.at !== "open") return;
+      yield* send(seat, caller, [{ id: `call-leave-${hex(yield* dice)}${hex(yield* dice)}`, do: "leave" }]);
+    });
+
   return (caller: Caller, instance: string) =>
     inLane(
       `call:${instance}`,
       Effect.gen(function* () {
         for (let tries = 0; tries < TRIES; tries++) {
           const at = yield* store.callAt(instance);
+          yield* leaveOtherCall(caller, Option.getOrNull(at));
           const seated = Option.isSome(at) ? yield* sitAt(caller, at.value) : null;
           if (seated !== null) return seated;
           const opened = yield* open(caller, instance);
