@@ -6,13 +6,16 @@ import { CurrentIdentity, type Identity, LeafApi, SittingBodyErrors } from "../.
 import { Invalid, SlowDown } from "../../api/errors.ts";
 import { CallUnchecked, SittingMissing, SittingRefused, SittingUpdating } from "../../api/sittings.ts";
 import type { Joining } from "../../sittings/calls.ts";
-import { CallMembers } from "../../sittings/members.ts";
 import { type Caller, type Opening, type Shown, Sittings } from "../../sittings/service.ts";
 import { payloadError } from "./middleware.ts";
 import { iso, notYou, unreadable } from "./shared.ts";
 
 /** Who calls a sitting, as the sittings service needs to know them. */
-const callerOf = (identity: Identity): Caller => ({ playerId: identity.playerId, username: identity.username });
+const callerOf = (identity: Identity): Caller => ({
+  playerId: identity.playerId,
+  username: identity.username,
+  discord: identity.discord,
+});
 
 /** A sitting as an answer sends it. */
 const shownJson = ({ id, rev, now, view, purse }: Shown) => ({ id, rev, now: iso(now), state: view, purse });
@@ -81,13 +84,16 @@ const joined = (j: Joining) =>
       )
     : j.status === "updating"
       ? Effect.fail(updating)
-      : opened(j);
+      : j.status === "not_in_call"
+        ? Effect.fail(notInCall)
+        : j.status === "unchecked"
+          ? Effect.fail(unchecked)
+          : opened(j);
 
 export const GameSittingsHandlers = HttpApiBuilder.group(LeafApi, "gameSittings", (handlers) =>
   Effect.gen(function* () {
     const sittings = yield* Sittings;
     const visits = yield* Visits;
-    const members = yield* CallMembers;
     return (
       handlers
         .handle("sittings", () =>
@@ -109,16 +115,12 @@ export const GameSittingsHandlers = HttpApiBuilder.group(LeafApi, "gameSittings"
             return yield* opened(made);
           }),
         )
-        // The table of a launch in a Discord call: the caller's, opened or sat at, or why not. Only
-        // someone Discord has in the launch sits at it, never on the page's word.
+        // The table of a launch in a Discord call: the caller's, opened or sat at, or why not (only
+        // someone Discord has in the call sits at it: the sittings' own rule).
         .handle("callSitting", ({ payload }) =>
           Effect.gen(function* () {
             const identity = yield* CurrentIdentity;
             if (payload.player !== identity.playerId) return yield* notYou;
-            const { discord } = identity;
-            const inCall = discord === null ? "out" : yield* members.check(payload.instance, discord);
-            if (inCall === "unchecked") return yield* unchecked;
-            if (inCall === "out") return yield* notInCall;
             const at = yield* sittings.join(callerOf(identity), payload.instance);
             if (at.status === "shown") yield* visits.acted(identity.playerId, yield* Clock.currentTimeMillis);
             return yield* joined(at);
@@ -170,6 +172,10 @@ export const GameSittingsHandlers = HttpApiBuilder.group(LeafApi, "gameSittings"
                 return yield* updating;
               case "slow":
                 return yield* slow;
+              case "not_in_call":
+                return yield* notInCall;
+              case "unchecked":
+                return yield* unchecked;
             }
           }),
         )

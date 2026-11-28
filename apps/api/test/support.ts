@@ -261,7 +261,7 @@ export function testLeaf(clock: TestClock, fetcher: Fetcher, config: Partial<Set
     Play.useSync((real) => fakes.playing?.(real) ?? real),
   ).pipe(Layer.provide(Play.layer));
   const layer = Layer.merge(
-    Layer.mergeAll(playing, credits, Sittings.layer, CallMembers.layer).pipe(
+    Layer.mergeAll(playing, credits, Sittings.layer.pipe(Layer.provideMerge(CallMembers.layer))).pipe(
       Layer.provideMerge(between.pipe(Layer.provideMerge(stores))),
     ),
     live,

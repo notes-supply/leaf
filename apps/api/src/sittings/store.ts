@@ -178,7 +178,7 @@ function callsIn(sql: SqlClient.SqlClient) {
     Result: Schema.Struct({ sitting: Schema.String }),
     execute: (instance) => sql`SELECT sitting FROM raid_sitting_calls WHERE instance = ${instance}`,
   });
-  const isCall = SqlSchema.findAll({
+  const callOf = SqlSchema.findOneOption({
     Request: Schema.String,
     Result: Schema.Struct({ instance: Schema.String }),
     execute: (id) => sql`SELECT instance FROM raid_sitting_calls WHERE sitting = ${id}`,
@@ -186,12 +186,8 @@ function callsIn(sql: SqlClient.SqlClient) {
   return {
     /** The sitting a launch sits at, if it has one. */
     callAt: (instance: string) => callAt(instance).pipe(Effect.map(Option.map((row) => row.sitting)), Effect.orDie),
-    /** Whether a sitting is a launch's in a Discord call. */
-    isCall: (id: string) =>
-      isCall(id).pipe(
-        Effect.map((rows) => rows.length > 0),
-        Effect.orDie,
-      ),
+    /** The launch in a Discord call a sitting is for, if it is one's. */
+    callOf: (id: string) => callOf(id).pipe(Effect.map(Option.map((row) => row.instance)), Effect.orDie),
     /**
      * Has a launch sit at a sitting, in place of one of its that is over. Says whether it does: false
      * when one of its is not over (another made it meanwhile). Meant to run inside the transaction

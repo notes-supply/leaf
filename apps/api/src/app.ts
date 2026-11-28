@@ -139,8 +139,8 @@ export const Stores = Layer.mergeAll(
  */
 export const Services = Layer.mergeAll(
   Play.layer,
-  Sittings.layer,
-  CallMembers.layer,
+  // The sittings ask Discord who is in a call before seating anyone at a call's sitting.
+  Sittings.layer.pipe(Layer.provideMerge(CallMembers.layer)),
   Credits.layer,
   Live.layer.pipe(Layer.provide(LiveTuned)),
 ).pipe(

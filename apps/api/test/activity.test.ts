@@ -27,6 +27,8 @@ interface Discord {
   instances: Record<string, string[]>;
   down: boolean;
   failing: boolean;
+  /** Seconds a 429 asks Leaf to wait, while Discord says Leaf has asked too much; 0 when it has not. */
+  limited: number;
   /** The form of every code traded, as Discord got it. */
   readonly traded: URLSearchParams[];
   /** Every launch Leaf asked about, in order. */
@@ -44,6 +46,11 @@ function instanceAnswer(request: Request, instance: string): Response {
   if (request.headers.get("Authorization") !== `Bot ${BOT}`)
     return Response.json({ message: "401: Unauthorized" }, { status: 401 });
   discord.asked.push(instance);
+  if (discord.limited > 0)
+    return Response.json(
+      { message: "You are being rate limited.", retry_after: discord.limited, global: false },
+      { status: 429, headers: { "Retry-After": String(discord.limited) } },
+    );
   const users = discord.instances[instance];
   return users === undefined
     ? Response.json({ message: "404: Not Found", code: 0 }, { status: 404 })
@@ -100,7 +107,7 @@ function codeFor(n: number, id = `2${String(n).padStart(17, "0")}`): string {
 
 /** A Leaf with the Discord application (`activity`), and its bot's token (`bot`). */
 function start(activity = true, bot = true) {
-  discord = { codes: {}, instances: {}, down: false, failing: false, traded: [], asked: [] };
+  discord = { codes: {}, instances: {}, down: false, failing: false, limited: 0, traded: [], asked: [] };
   known = {};
   clock.now = T0;
   const { fetcher } = fakeBackend({ "alice-token": () => Response.json(sessionOf(alice, "Alice")) });
@@ -496,19 +503,136 @@ describe("who sits at a call's table, as Discord says", () => {
     expect(await sittingsMade()).toEqual([{ n: 0 }]);
   });
 
-  it("seats nobody when Discord does not answer, and asks it again the next time", async () => {
+  it("seats nobody when Discord does not answer, keeps that a few seconds as any answer, then asks again", async () => {
     const who = await player(1);
     intoCall(who, "i-830-gc-1-2");
+    intoCall(who, "i-831-gc-1-2");
 
     discord.down = true;
     const down = await ask(who, "i-830-gc-1-2");
     discord.down = false;
     discord.failing = true;
-    const failing = await ask(who, "i-830-gc-1-2");
+    const failing = await ask(who, "i-831-gc-1-2");
     discord.failing = false;
 
     expect([down, failing]).toEqual([CANNOT, CANNOT]);
     expect(await sittingsMade()).toEqual([{ n: 0 }]);
+    // Discord is back, but no answer is what Leaf heard of this launch a moment ago.
+    expect(await ask(who, "i-830-gc-1-2")).toEqual(CANNOT);
+    clock.now += 6000;
     expect((await ask(who, "i-830-gc-1-2")).status).toBe(200);
+  });
+
+  it("asks Discord for one player only a few times a minute, so made-up launches cannot spend the bot's limits", async () => {
+    const who = await player(1);
+    const answers = [];
+    // oxlint-disable-next-line no-await-in-loop -- one after another
+    for (let n = 0; n < 7; n++) answers.push(await ask(who, `i-made-up-${n}`));
+
+    expect(answers.slice(0, 6)).toEqual(Array.from({ length: 6 }, () => NOT_IN));
+    expect(answers[6]).toEqual(CANNOT);
+    expect(discord.asked).toHaveLength(6);
+    // Ten seconds on, one more.
+    clock.now += 10_000;
+    expect(await ask(who, "i-made-up-7")).toEqual(NOT_IN);
+    expect(discord.asked).toHaveLength(7);
+  });
+
+  it("asks Discord nothing for anyone while a 429 says to wait, and asks again once it has passed", async () => {
+    const first = await player(1);
+    const second = await player(2);
+    intoCall(first, "i-840-gc-1-2");
+    intoCall(second, "i-841-gc-1-2");
+
+    discord.limited = 30;
+    expect(await ask(first, "i-840-gc-1-2")).toEqual(CANNOT);
+    discord.limited = 0;
+    expect(await ask(second, "i-841-gc-1-2")).toEqual(CANNOT);
+    expect(discord.asked).toEqual(["i-840-gc-1-2"]);
+
+    clock.now += 31_000;
+    expect((await ask(second, "i-841-gc-1-2")).status).toBe(200);
+    expect(discord.asked).toEqual(["i-840-gc-1-2", "i-841-gc-1-2"]);
+  });
+});
+
+/** `who` sends commands to a sitting by its id, as any page may. */
+async function command(who: Signed, id: string, commands: readonly object[]) {
+  const response = await app.request(`/v1/game/sittings/${id}`, {
+    method: "POST",
+    headers: { Cookie: `__Host-leaf_session=${who.token}`, Origin: FRAME, "Content-Type": "application/json" },
+    body: JSON.stringify({ player: who.id, commands }),
+  });
+  const body: unknown = await response.json();
+  return { status: response.status, body };
+}
+
+describe("a call's table, whichever way someone asks", () => {
+  it("seats nobody Discord does not have in the call, by its id: an outsider takes no eighth seat and starts nothing", async () => {
+    const players = [];
+    // oxlint-disable-next-line no-await-in-loop -- one after another, in order
+    for (let n = 1; n <= CHAIRS; n++) players.push(await player(n));
+    const members = players.slice(0, CHAIRS - 1);
+    const [outsider] = players.slice(CHAIRS - 1);
+    if (outsider === undefined) throw new Error("No outsider");
+    for (const who of members) intoCall(who, "i-900-gc-1-2");
+    const answers = [];
+    // oxlint-disable-next-line no-await-in-loop -- they come one after another, in order
+    for (const who of members) answers.push(await join(who, "i-900-gc-1-2"));
+    const id = seated(answers[0]?.body).id;
+    clock.now += 2000;
+
+    expect(await command(outsider, id, [{ id: "sit-1", do: "sit" }])).toEqual(NOT_IN);
+    const started = await command(outsider, id, [{ id: "start-1", do: "start" }]);
+
+    expect(started).toMatchObject({ status: 200, body: { results: [{ id: "start-1", refused: "not_opener" }] } });
+    expect(seated(started.body).state.stage).toMatchObject({ at: "open" });
+    expect(seated(started.body).state.stage.sat).toHaveLength(CHAIRS - 1);
+  });
+
+  it("lets someone in the call sit at its table by its id, as the page's own sit does", async () => {
+    const first = await player(1);
+    const second = await player(2);
+    for (const who of [first, second]) intoCall(who, "i-910-gc-1-2");
+    const id = seated((await join(first, "i-910-gc-1-2")).body).id;
+
+    const sat = await command(second, id, [{ id: "sit-1", do: "sit" }]);
+
+    expect(sat.status).toBe(200);
+    expect(seated(sat.body).state.stage.sat).toEqual([{ name: "player1" }, { name: "player2" }]);
+  });
+
+  it("keeps someone at their table when the call they open has started without them", async () => {
+    const lone = await player(1);
+    const [b1, b2] = [await player(2), await player(3)];
+    intoCall(lone, "i-920-gc-1-2");
+    for (const who of [lone, b1, b2]) intoCall(who, "i-921-gc-1-2");
+    const mine = seated((await join(lone, "i-920-gc-1-2")).body).id;
+    const theirs = seated((await join(b1, "i-921-gc-1-2")).body).id;
+    expect((await join(b2, "i-921-gc-1-2")).status).toBe(200);
+    expect((await command(b1, theirs, [{ id: "start-1", do: "start" }])).status).toBe(200);
+
+    expect(await join(lone, "i-921-gc-1-2")).toEqual({
+      status: 409,
+      body: { code: "table_started", message: "This table has started. Join the next one when it ends" },
+    });
+    // Still at their own, which goes on with them.
+    expect(seated((await join(lone, "i-920-gc-1-2")).body)).toMatchObject({
+      id: mine,
+      state: { stage: { at: "open", sat: [{ name: "player1" }] } },
+    });
+  });
+
+  it("keeps someone at their table when it is too soon for them to open the call's", async () => {
+    const lone = await player(1);
+    intoCall(lone, "i-930-gc-1-2");
+    intoCall(lone, "i-931-gc-1-2");
+    const mine = seated((await join(lone, "i-930-gc-1-2")).body).id;
+
+    expect(await join(lone, "i-931-gc-1-2")).toMatchObject({ status: 429, body: { code: "slow_down" } });
+    expect(seated((await join(lone, "i-930-gc-1-2")).body)).toMatchObject({
+      id: mine,
+      state: { stage: { at: "open", sat: [{ name: "player1" }] } },
+    });
   });
 });

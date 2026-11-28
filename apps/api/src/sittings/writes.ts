@@ -1,5 +1,5 @@
 /**
- * Keeping a sitting: one transaction that checks the `rev` it was read at and writes it, with
+ * Keeping a sitting: one transaction (a step of a larger one, inside one) that checks the `rev` it was read at and writes it, with
  * everything that follows from it: the Coins its members are owed, paid once within what each may
  * still earn; seats taken and freed; the place of each member it puts out, or first; what it logs;
  * and the answers to the commands that changed it. What is stored having moved on, or a seat taken meanwhile at another
@@ -221,7 +221,8 @@ export const sittingWrites = Effect.gen(function* () {
             }),
           )
           .pipe(Effect.catchTag("SqlError", Effect.die));
-        if (changed) tell(id, rev, from.sitting, after);
+        // Told once it is kept for good: inside a larger step that is undone, nobody is told of it.
+        if (changed) yield* sql.afterCommit(Effect.sync(() => tell(id, rev, from.sitting, after)));
         return { rev, sitting: after };
       }),
     /**
@@ -244,7 +245,7 @@ export const sittingWrites = Effect.gen(function* () {
             }),
           )
           .pipe(Effect.catchTag("SqlError", Effect.die));
-        tell(id, 0, null, t);
+        yield* sql.afterCommit(Effect.sync(() => tell(id, 0, null, t)));
       }),
   };
 });

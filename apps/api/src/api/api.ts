@@ -387,7 +387,16 @@ export class GameSittingsApi extends HttpApiGroup.make("gameSittings")
       params: SittingParams,
       payload: PlayBody,
       success: SittingPlayed,
-      error: [Invalid, NotYou, SittingMissing, StateUnreadable, SittingUpdating, SlowDown],
+      error: [
+        Invalid,
+        NotYou,
+        SittingMissing,
+        StateUnreadable,
+        SittingUpdating,
+        SittingRefused,
+        CallUnchecked,
+        SlowDown,
+      ],
     }).middleware(PlayBodyErrors),
   )
   .middleware(Player)
