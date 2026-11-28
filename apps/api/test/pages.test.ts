@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { playerId } from "@sequoia-leaf/core";
 
 import { API_POLICY } from "../src/http/headers.ts";
-import { PAGE_POLICY } from "../src/http/pages.ts";
+import { CALL_PAGE_POLICY, PAGE_POLICY } from "../src/http/pages.ts";
 import { fakeBackend, sessionOf, testLeaf } from "./support.ts";
 
 const alice = playerId("10000000-0000-0000-0000-000000000001");
@@ -175,6 +175,71 @@ describe("the game's pages, with PUBLIC_DIR set", () => {
 
     expect(API_POLICY).toBe("default-src 'none'; frame-ancestors 'none'");
     expect(answers).toEqual(Array.from({ length: 6 }, () => [API_POLICY, "nosniff"]));
+    await app.dispose();
+  });
+});
+
+describe("the raid in a Discord call", () => {
+  /** Discord's launch query, as its frame opens the raid. */
+  const LAUNCH = "?instance_id=i-1-gc-2-3&location_id=gc-2-3&launch_id=1&frame_id=f-9&platform=desktop";
+
+  it("lets Discord's own apps frame the raid's page, besides Leaf's own pages, and nothing else", () => {
+    expect(CALL_PAGE_POLICY).toBe(
+      PAGE_POLICY.replace(
+        "frame-ancestors 'self'",
+        "frame-ancestors 'self' https://discord.com https://ptb.discord.com https://canary.discord.com",
+      ),
+    );
+  });
+
+  it("sends Discord's launch of / to the raid's page, with its query as it came", async () => {
+    const app = leafServing(publicDir);
+
+    const entry = await app.request(`/${LAUNCH}`);
+
+    expect(entry.status).toBe(302);
+    expect(entry.headers.get("Location")).toBe(`/play/battler/${LAUNCH}`);
+    expect(entry.headers.get("Content-Security-Policy")).toBe(CALL_PAGE_POLICY);
+    expect(entry.headers.get("Cache-Control")).toBe("no-store");
+    await app.dispose();
+  });
+
+  it("sends / to the town for anything but Discord's launch", async () => {
+    const app = leafServing(publicDir);
+
+    for (const query of ["", "?frame_id=f-9", "?instance_id=i-1", "?frame_id=&instance_id=i-1"]) {
+      // oxlint-disable-next-line no-await-in-loop -- one address after another
+      const response = await app.request(`/${query}`);
+      expect(response.headers.get("Location")).toBe("/play/town/");
+      expect(response.headers.get("Content-Security-Policy")).not.toBe(CALL_PAGE_POLICY);
+    }
+    await app.dispose();
+  });
+
+  it("serves the raid's page opened by Discord with Discord's frames allowed, and every other page as ever", async () => {
+    const app = leafServing(publicDir);
+    const policies = await Promise.all(
+      [
+        `/play/battler/${LAUNCH}`,
+        `/play/battler/index.html${LAUNCH}`,
+        "/play/battler/",
+        "/play/battler/?frame_id=f-9",
+        `/play/town/${LAUNCH}`,
+        `/play/works/${LAUNCH}`,
+        "/play/battler/index-meamkakx.js",
+      ].map(async (path) => [path, (await app.request(path)).headers.get("Content-Security-Policy")]),
+    );
+
+    expect(policies).toEqual([
+      [`/play/battler/${LAUNCH}`, CALL_PAGE_POLICY],
+      [`/play/battler/index.html${LAUNCH}`, CALL_PAGE_POLICY],
+      ["/play/battler/", PAGE_POLICY],
+      ["/play/battler/?frame_id=f-9", PAGE_POLICY],
+      [`/play/town/${LAUNCH}`, PAGE_POLICY],
+      [`/play/works/${LAUNCH}`, PAGE_POLICY],
+      // A script is framed by nothing: its policy says nothing a frame needs.
+      ["/play/battler/index-meamkakx.js", PAGE_POLICY],
+    ]);
     await app.dispose();
   });
 });

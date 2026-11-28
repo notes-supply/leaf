@@ -5,7 +5,8 @@ import { Visits } from "../../activity/visits.ts";
 import { CurrentIdentity, type Identity, LeafApi, SittingBodyErrors } from "../../api/api.ts";
 import { Invalid, SlowDown } from "../../api/errors.ts";
 import { SittingMissing, SittingRefused, SittingUpdating } from "../../api/sittings.ts";
-import { type Caller, type Shown, Sittings } from "../../sittings/service.ts";
+import type { Joining } from "../../sittings/calls.ts";
+import { type Caller, type Opening, type Shown, Sittings } from "../../sittings/service.ts";
 import { payloadError } from "./middleware.ts";
 import { iso, notYou, unreadable } from "./shared.ts";
 
@@ -29,10 +30,51 @@ const slow = new SlowDown({
 /** The `rev` a page says it has, if it says one that is one. */
 const revOf = (rev: string | undefined): number | undefined => (/^\d{1,12}$/.test(rev ?? "") ? Number(rev) : undefined);
 
-/** An opening of a sitting whose body is not `{ "player" }` gets `invalid_command`. */
+/** An opening of a sitting whose body is not `{ "player" }` (and `"instance"`, in a Discord call) gets `invalid_command`. */
 export const SittingBodyErrorsLive = Layer.succeed(SittingBodyErrors)(
-  payloadError(new Invalid({ code: "invalid_command", message: 'Send { "player": "<your id>" } to open a table' })),
+  payloadError(
+    new Invalid({
+      code: "invalid_command",
+      message: 'Send { "player": "<your id>" } to open a table, with "instance": "<the launch>" in a Discord call',
+    }),
+  ),
 );
+
+/** A sitting opened, answered: shown, or refused with what it was refused for. */
+const opened = (o: Exclude<Opening, { readonly status: "taken" }>) => {
+  switch (o.status) {
+    case "shown":
+      return Effect.succeed(shownJson(o));
+    case "seated_elsewhere":
+      return Effect.fail(new SittingRefused({ code: "seated_elsewhere", message: "You are at another table." }));
+    case "full":
+      return Effect.fail(
+        new SittingRefused({
+          code: "sittings_full",
+          message: "As many tables are going as there may be. Try again in a while",
+        }),
+      );
+    case "too_soon":
+      return Effect.fail(
+        new SlowDown({ code: "slow_down", message: "You opened a table a moment ago. Wait a minute" }),
+      );
+    case "slow":
+      return Effect.fail(slow);
+  }
+};
+
+/** A call's sitting sat at, answered as an opening is, or turned away from one started. */
+const joined = (j: Joining) =>
+  j.status === "started"
+    ? Effect.fail(
+        new SittingRefused({
+          code: "table_started",
+          message: "This table has started. Join the next one when it ends",
+        }),
+      )
+    : j.status === "updating"
+      ? Effect.fail(updating)
+      : opened(j);
 
 export const GameSittingsHandlers = HttpApiBuilder.group(LeafApi, "gameSittings", (handlers) =>
   Effect.gen(function* () {
@@ -52,26 +94,21 @@ export const GameSittingsHandlers = HttpApiBuilder.group(LeafApi, "gameSittings"
           Effect.gen(function* () {
             const identity = yield* CurrentIdentity;
             if (payload.player !== identity.playerId) return yield* notYou;
-            const opened = yield* sittings.open(callerOf(identity));
-            switch (opened.status) {
-              case "shown":
-                yield* visits.acted(identity.playerId, yield* Clock.currentTimeMillis);
-                return shownJson(opened);
-              case "seated_elsewhere":
-                return yield* new SittingRefused({ code: "seated_elsewhere", message: "You are at another table." });
-              case "full":
-                return yield* new SittingRefused({
-                  code: "sittings_full",
-                  message: "As many tables are going as there may be. Try again in a while",
-                });
-              case "too_soon":
-                return yield* new SlowDown({
-                  code: "slow_down",
-                  message: "You opened a table a moment ago. Wait a minute",
-                });
-              case "slow":
-                return yield* slow;
-            }
+            const made = yield* sittings.open(callerOf(identity));
+            // Opened for no launch, it is never another's.
+            if (made.status === "taken") return yield* Effect.die(new Error("A table for no call was taken"));
+            if (made.status === "shown") yield* visits.acted(identity.playerId, yield* Clock.currentTimeMillis);
+            return yield* opened(made);
+          }),
+        )
+        // The table of a launch in a Discord call: the caller's, opened or sat at, or why not.
+        .handle("callSitting", ({ payload }) =>
+          Effect.gen(function* () {
+            const identity = yield* CurrentIdentity;
+            if (payload.player !== identity.playerId) return yield* notYou;
+            const at = yield* sittings.join(callerOf(identity), payload.instance);
+            if (at.status === "shown") yield* visits.acted(identity.playerId, yield* Clock.currentTimeMillis);
+            return yield* joined(at);
           }),
         )
         .handle("sittingRecord", () =>

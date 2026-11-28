@@ -51,6 +51,12 @@ export const SittingRecord = Schema.Struct({ played: Schema.Number, won: Schema.
 /** Opening a sitting, from the player the page believes it is. */
 export const OpenBody = Schema.Struct({ player: Schema.String });
 
+/** Sitting at the sitting of a launch of the raid in a Discord call: the player, and the launch Discord named. */
+export const CallBody = Schema.Struct({
+  player: Schema.String,
+  instance: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_.:-]{1,128}$/)),
+});
+
 const answer = <const Codes extends readonly [string, ...string[]]>(...codes: Codes) => ({
   code: Schema.Literals(codes),
   message: Schema.String,
@@ -66,8 +72,11 @@ export class SittingUpdating extends Schema.Error<SittingUpdating>("SittingUpdat
   httpApiStatus: 503,
 }) {}
 
-/** A sitting not opened: the caller is seated at another, or as many are going as may be. Nothing was done. */
+/**
+ * A sitting not opened or sat at: the caller is seated at another, as many are going as may be, or
+ * (in a Discord call) the call's has started without them. Nothing was done.
+ */
 export class SittingRefused extends Schema.Error<SittingRefused>("SittingRefused")(
-  answer("seated_elsewhere", "sittings_full"),
+  answer("seated_elsewhere", "sittings_full", "table_started"),
   { httpApiStatus: 409 },
 ) {}

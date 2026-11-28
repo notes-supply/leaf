@@ -1,6 +1,7 @@
 /**
  * What Leaf keeps of the raid's sittings (migration 46): each sitting's state, who is seated where
- * while one is not over, and every member's place at one finished. The sittings service (`service.ts`)
+ * while one is not over, and every member's place at one finished; and which a launch of the raid in a
+ * Discord call sits at (migration 50). The sittings service (`service.ts`)
  * reads and writes them; every write but `create`, `shelve` and `letGo` is meant to run inside its
  * transaction. A database failure is a defect.
  */
@@ -55,7 +56,9 @@ function sittingsIn(sql: SqlClient.SqlClient) {
     Result: Open,
     execute: ({ now, most }) => sql`
       SELECT id, state, opened_at AS openedAt FROM raid_sittings
-      WHERE stage = 'open' AND due_at > ${now} ORDER BY opened_at, id LIMIT ${most}
+      WHERE stage = 'open' AND due_at > ${now}
+        AND NOT EXISTS (SELECT 1 FROM raid_sitting_calls WHERE sitting = raid_sittings.id)
+      ORDER BY opened_at, id LIMIT ${most}
     `,
   });
   const due = SqlSchema.findAll({
@@ -80,7 +83,7 @@ function sittingsIn(sql: SqlClient.SqlClient) {
     read: (id: string) => read(id).pipe(Effect.orDie),
     /** A sitting's `rev`, and when it is due next, reading no more of it; or none. */
     at: (id: string) => at(id).pipe(Effect.orDie),
-    /** The open sittings not yet closed at `now`, the longest open first, `most` at most. */
+    /** The open sittings not yet closed at `now`, the longest open first, `most` at most: a call's are its own, and not among them. */
     open: (now: number, most: number) => open({ now, most }).pipe(Effect.orDie),
     /** The sittings due by `now`, the longest due first, `most` at most. */
     due: (now: number, most: number) =>
@@ -168,6 +171,36 @@ function seatsIn(sql: SqlClient.SqlClient) {
   };
 }
 
+/** Which sitting a launch of the raid in a Discord call sits at (migration 50). */
+function callsIn(sql: SqlClient.SqlClient) {
+  const callAt = SqlSchema.findOneOption({
+    Request: Schema.String,
+    Result: Schema.Struct({ sitting: Schema.String }),
+    execute: (instance) => sql`SELECT sitting FROM raid_sitting_calls WHERE instance = ${instance}`,
+  });
+  return {
+    /** The sitting a launch sits at, if it has one. */
+    callAt: (instance: string) => callAt(instance).pipe(Effect.map(Option.map((row) => row.sitting)), Effect.orDie),
+    /**
+     * Has a launch sit at a sitting, in place of one of its that is over. Says whether it does: false
+     * when one of its is not over (another made it meanwhile). Meant to run inside the transaction
+     * that creates the sitting.
+     */
+    call: (instance: string, id: string, now: number) =>
+      Effect.gen(function* () {
+        yield* sql`
+          DELETE FROM raid_sitting_calls WHERE instance = ${instance}
+            AND sitting IN (SELECT id FROM raid_sittings WHERE ended_at IS NOT NULL)
+        `;
+        const made = yield* sql`
+          INSERT INTO raid_sitting_calls (instance, sitting, since) VALUES (${instance}, ${id}, ${now})
+          ON CONFLICT (instance) DO NOTHING RETURNING sitting
+        `;
+        return made.length > 0;
+      }).pipe(Effect.orDie),
+  };
+}
+
 /** Writing the sittings themselves. */
 function writesIn(sql: SqlClient.SqlClient) {
   return {
@@ -219,6 +252,7 @@ function writesIn(sql: SqlClient.SqlClient) {
 export const sittingStore = Effect.map(SqlClient.SqlClient, (sql) => ({
   ...sittingsIn(sql),
   ...seatsIn(sql),
+  ...callsIn(sql),
   ...writesIn(sql),
 }));
 

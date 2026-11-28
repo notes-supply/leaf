@@ -6,7 +6,7 @@ import { Allowance, Allowances } from "../../allowance.ts";
 import { LeafApi, SessionCookie } from "../../api/api.ts";
 import { BadOrigin } from "../../api/errors.ts";
 import { Identities } from "../../auth/session.ts";
-import { AppConfig } from "../../config.ts";
+import { AppConfig, fromLeafPage } from "../../config.ts";
 import { pageErrors, pageErrorsDropped } from "../../metrics.ts";
 import { sessionCookies } from "./middleware.ts";
 
@@ -29,14 +29,14 @@ const drop = (limit: "player" | "overall") => Metric.update(pageErrorsDropped({ 
 export const GameReportsHandlers = HttpApiBuilder.group(LeafApi, "gameReports", (handlers) =>
   Effect.gen(function* () {
     const identities = yield* Identities;
-    const { publicOrigin } = yield* AppConfig;
+    const settings = yield* AppConfig;
     const cookie = HttpApiBuilder.securityDecode(SessionCookie);
     const overall = new Allowance(OVERALL, yield* Clock.currentTimeMillis);
     const players = new Allowances([PER_PLAYER], KEPT);
     return handlers.handle("pageError", ({ payload }) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
-        if (request.headers["origin"] !== publicOrigin) {
+        if (!fromLeafPage(settings, request.headers["origin"])) {
           return yield* new BadOrigin({ code: "bad_origin", message: "Leaf takes this only from its own pages" });
         }
         // Counted against everybody's allowance before the session is asked about, so that reports

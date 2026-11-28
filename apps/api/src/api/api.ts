@@ -73,6 +73,7 @@ import {
   Tally,
 } from "./schemas.ts";
 import {
+  CallBody,
   OpenBody,
   SittingMissing,
   SittingPlayed,
@@ -368,6 +369,11 @@ export class GameSittingsApi extends HttpApiGroup.make("gameSittings")
       payload: OpenBody,
       success: SittingShown,
       error: [Invalid, NotYou, SittingRefused, SlowDown],
+    }).middleware(SittingBodyErrors),
+    HttpApiEndpoint.post("callSitting", "/sittings/call", {
+      payload: CallBody,
+      success: SittingShown,
+      error: [Invalid, NotYou, SittingRefused, SittingUpdating, SlowDown],
     }).middleware(SittingBodyErrors),
     HttpApiEndpoint.get("sittingRecord", "/sittings/record", { success: SittingRecord }),
     HttpApiEndpoint.get("sitting", "/sittings/:id", {

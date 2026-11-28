@@ -23,6 +23,7 @@ import { PlayerNames } from "../game/names.ts";
 import { Coins } from "../play/coins.ts";
 import { PlayPace } from "../play/pace.ts";
 import { PlayStore } from "../play/store.ts";
+import { type Joining, joinOf } from "./calls.ts";
 import type { Record } from "./store.ts";
 import { type Answer, ANSWERS, type Loaded, type Lost, MOST_NOT_OVER, sittingWrites } from "./writes.ts";
 
@@ -69,7 +70,9 @@ export type Opening =
   | { readonly status: "full" }
   /** The caller opened one less than `OPEN_EVERY_MS` ago. */
   | { readonly status: "too_soon" }
-  | { readonly status: "slow" };
+  | { readonly status: "slow" }
+  /** The launch in a Discord call it was for has one not over, made meanwhile: nothing was opened. */
+  | { readonly status: "taken" };
 
 export type Sending =
   | ({ readonly status: "done"; readonly results: readonly Result[] } & Shown)
@@ -161,7 +164,7 @@ const parts = Effect.gen(function* () {
       Effect.scoped(Effect.flatMap(RcMap.get(lanes, id), (lane) => lane.withPermit(effect))),
   };
 });
-type Parts = Effect.Success<typeof parts>;
+export type Parts = Effect.Success<typeof parts>;
 
 /** The jobs every route shares: a sitting read, brought to the clock, and shown. */
 function jobsOf({ writes, store, coins, names, inLane }: Parts) {
@@ -211,7 +214,7 @@ function jobsOf({ writes, store, coins, names, inLane }: Parts) {
     Effect.map(names.of([playerId]), (named) => named.get(playerId) ?? username);
   return { job, load, bring, shown, freeUp, nameOf };
 }
-type Jobs = ReturnType<typeof jobsOf>;
+export type Jobs = ReturnType<typeof jobsOf>;
 
 /** A batch of commands at a sitting, in its lane at `now`: each done in order, then the sitting kept with their answers. */
 function batchOf({ writes, store, playStore, dice }: Parts, { load, shown }: Jobs) {
@@ -257,8 +260,13 @@ export class Sittings extends Context.Service<
   {
     /** The open sittings to sit at, and the caller's own, if any. */
     readonly list: (player: PlayerId) => Effect.Effect<Listing>;
-    /** Opens a sitting with the caller sat at it. */
-    readonly open: (caller: Caller) => Effect.Effect<Opening>;
+    /** Opens a sitting with the caller sat at it; with `call`, the sitting of that launch in a Discord call. */
+    readonly open: (caller: Caller, call?: string) => Effect.Effect<Opening>;
+    /**
+     * Sits the caller at the sitting of a launch in a Discord call (`calls.ts`): everyone who opens
+     * that launch sits at one, the first to come opening it, until it starts.
+     */
+    readonly join: (caller: Caller, instance: string) => Effect.Effect<Joining>;
     /** A sitting brought to Leaf's clock, as the viewer is shown it; or unchanged, for the `rev` the page has. */
     readonly read: (id: string, viewer: PlayerId, rev?: number) => Effect.Effect<Reading>;
     /** Does a batch of commands at a sitting, as they came off the wire, each with its id. */
@@ -276,7 +284,7 @@ export class Sittings extends Context.Service<
       const { writes, store, playStore, pace, dice } = made;
       const jobs = jobsOf(made);
       const batch = batchOf(made, jobs);
-      return Sittings.of({
+      const service: Omit<Sittings["Service"], "join"> = {
         list: (player) =>
           Effect.gen(function* () {
             const now = yield* Clock.currentTimeMillis;
@@ -286,7 +294,7 @@ export class Sittings extends Context.Service<
             });
             return { now, open, yours: Option.getOrNull(yield* store.seatOf(player)) };
           }),
-        open: (caller) =>
+        open: (caller, call) =>
           Effect.gen(function* () {
             const now = yield* Clock.currentTimeMillis;
             if (!pace.take(caller.playerId, now, [1, 1])) return { status: "slow" } satisfies Opening;
@@ -300,11 +308,12 @@ export class Sittings extends Context.Service<
             const t = openSitting({ now, seed: yield* dice, player });
             // Seated somewhere meanwhile, by another request of theirs, or the last sitting there may
             // be opened meanwhile: nothing is kept.
-            const refused = yield* writes.create(id, t, now).pipe(
+            const refused = yield* writes.create(id, t, now, call).pipe(
               Effect.as(null),
               Effect.catchTags({
                 Lost: () => Effect.succeed<Opening>({ status: "seated_elsewhere" }),
                 Full: () => Effect.succeed<Opening>({ status: "full" }),
+                Taken: () => Effect.succeed<Opening>({ status: "taken" }),
               }),
             );
             if (refused !== null) return refused;
@@ -346,7 +355,8 @@ export class Sittings extends Context.Service<
           yield* store.letGo(now - KEPT_MS);
           return due.length;
         }),
-      });
+      };
+      return Sittings.of({ ...service, join: joinOf(made, jobs, service) });
     }),
   );
 }
