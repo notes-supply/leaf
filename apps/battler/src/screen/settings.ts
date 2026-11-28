@@ -5,6 +5,7 @@
 import { type Menu, settingsMenu } from "@sequoia-leaf/kit/menu.ts";
 import type { Scope } from "@sequoia-leaf/kit/scope.ts";
 
+import { inCall } from "./call/launch.ts";
 import { handHooks, letGoHand } from "./hand.ts";
 import { RAID_KEYS } from "./keymap.ts";
 import { RAID_SOUNDS } from "./sounds.ts";
@@ -23,6 +24,7 @@ export function startSettings(scope: Scope, lookBack: () => void): Menu {
     {
       sounds: [{ name: "The Little Raid", sounds: RAID_SOUNDS }],
       keys: RAID_KEYS,
+      account: !inCall(),
       opened: (open) => {
         if (open) letGoHand();
       },

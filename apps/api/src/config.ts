@@ -67,7 +67,29 @@ export interface Settings {
    * (`live_full`) until some go. Read as Leaf starts: a new number takes a restart.
    */
   readonly liveMostPlayers: number;
+  /** The raid in a Discord call (`http/activity.ts`), when both its variables are set; otherwise there is none. */
+  readonly activity: Activity | undefined;
 }
+
+/**
+ * The Discord application the raid runs in inside a call: its client id, its secret, which Leaf
+ * trades a page's sign-in code for the player's token with, its bot's token, which Leaf asks Discord
+ * who is in a call with (without it nobody is seated at a call's table), and the origin Discord serves
+ * the raid's pages from, `https://<client id>.discordsays.com`, which proxies them from Leaf.
+ */
+export interface Activity {
+  readonly clientId: string;
+  readonly clientSecret: Redacted.Redacted;
+  readonly botToken: Redacted.Redacted | undefined;
+  readonly origin: string;
+}
+
+/** Discord's API, as its guides for the raid's frame ask it. */
+export const DISCORD_API = "https://discord.com/api/v10";
+
+/** Whether an `Origin` is one of Leaf's own pages': at its public origin, or in a Discord call. */
+export const fromLeafPage = (settings: Settings, origin: string | undefined): boolean =>
+  origin !== undefined && (origin === settings.publicOrigin || origin === settings.activity?.origin);
 
 /**
  * How many players one Leaf carries in Live with room to spare, on the four cores production gives
@@ -149,9 +171,16 @@ export const settings: Config.Config<Settings> = Config.all({
   liveMostPlayers: Config.schema(Schema.Int.check(Schema.isGreaterThan(0)), "LIVE_MOST_PLAYERS").pipe(
     Config.withDefault(LIVE_MOST_PLAYERS),
   ),
+  // A Discord application's id is a snowflake: digits only, so it names one `discordsays.com` host.
+  activityClientId: optional(
+    Config.schema(Schema.String.check(Schema.isPattern(/^[0-9]{5,25}$/)), "LEAF_ACTIVITY_CLIENT_ID"),
+  ),
+  activityClientSecret: optional(Config.Redacted("LEAF_ACTIVITY_CLIENT_SECRET")),
+  activityBotToken: optional(Config.Redacted("LEAF_ACTIVITY_BOT_TOKEN")),
 }).pipe(
   Config.map((read): Settings => {
-    const { databasePath, endpoint, bucket, accessKeyId, secretAccessKey } = read;
+    const { databasePath, endpoint, bucket, accessKeyId, secretAccessKey, activityClientId: clientId } = read;
+    const clientSecret = read.activityClientSecret;
     const offsite =
       endpoint !== undefined && bucket !== undefined && accessKeyId !== undefined && secretAccessKey !== undefined
         ? { endpoint, bucket, accessKeyId, secretAccessKey }
@@ -178,6 +207,15 @@ export const settings: Config.Config<Settings> = Config.all({
       gameSignInUrl: read.gameSignInUrl,
       gameLeafSpending: read.gameLeafSpending,
       liveMostPlayers: read.liveMostPlayers,
+      activity:
+        clientId === undefined || clientSecret === undefined
+          ? undefined
+          : {
+              clientId,
+              clientSecret,
+              botToken: read.activityBotToken,
+              origin: `https://${clientId}.discordsays.com`,
+            },
     };
   }),
 );

@@ -171,23 +171,42 @@ async function asking(what: () => Promise<string | null>): Promise<void> {
   }
 }
 
-/** Opens a table, with the member sat at it. */
-export function openTable(): Promise<void> {
+/**
+ * Asks Leaf for a table to sit at (a `POST` of `body` to `path`) and takes it up; or says why not. A
+ * table the page follows already (the first read gave it back) is the one asked for: nothing more.
+ * With `final`, Leaf's answer is taken up even if the page took up another meanwhile: it is the table
+ * Leaf has just seated the member at.
+ */
+function seatFrom(path: string, body: object, final = false): Promise<void> {
   return asking(async () => {
-    const asked = T.gen;
-    const answer = await ask("/v1/game/sittings", {
+    const before = T.gen;
+    const answer = await ask(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ player: T.me?.id }),
+      body: JSON.stringify(body),
     });
     if (answer.status === 200 && isRecord(answer.body) && typeof answer.body.id === "string") {
-      return lineFrom(answer.body.id, answer.body, asked) ? null : "That table could not be read.";
+      if (liveLine()?.id === answer.body.id) return null;
+      return lineFrom(answer.body.id, answer.body, final ? T.gen : before) ? null : "That table could not be read.";
     }
     return isRecord(answer.body) && typeof answer.body.message === "string"
       ? `${answer.body.message}.`
       : "Leaf did not answer. Try again.";
   });
 }
+
+/** Opens a table, with the member sat at it. */
+export const openTable = (): Promise<void> => seatFrom("/v1/game/sittings", { player: T.me?.id });
+
+/**
+ * Sits down at the table of the member's Discord call (`instance`, its launch), opening it if nobody
+ * has: Leaf knows which. Its answer wins over the first read's, which may give back another table.
+ */
+export const joinCall = (instance: string): Promise<void> =>
+  seatFrom("/v1/game/sittings/call", { player: T.me?.id, instance }, true);
+
+/** Why the last thing asked of Leaf for the tables was not done, or null. */
+export const tablesWhy = (): string | null => T.why;
 
 /** Sits down at an open table. */
 export function sitAt(id: string): Promise<void> {

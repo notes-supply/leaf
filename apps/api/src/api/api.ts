@@ -73,6 +73,8 @@ import {
   Tally,
 } from "./schemas.ts";
 import {
+  CallBody,
+  CallUnchecked,
   OpenBody,
   SittingMissing,
   SittingPlayed,
@@ -369,6 +371,11 @@ export class GameSittingsApi extends HttpApiGroup.make("gameSittings")
       success: SittingShown,
       error: [Invalid, NotYou, SittingRefused, SlowDown],
     }).middleware(SittingBodyErrors),
+    HttpApiEndpoint.post("callSitting", "/sittings/call", {
+      payload: CallBody,
+      success: SittingShown,
+      error: [Invalid, NotYou, SittingRefused, SittingUpdating, CallUnchecked, SlowDown],
+    }).middleware(SittingBodyErrors),
     HttpApiEndpoint.get("sittingRecord", "/sittings/record", { success: SittingRecord }),
     HttpApiEndpoint.get("sitting", "/sittings/:id", {
       params: SittingParams,
@@ -380,7 +387,16 @@ export class GameSittingsApi extends HttpApiGroup.make("gameSittings")
       params: SittingParams,
       payload: PlayBody,
       success: SittingPlayed,
-      error: [Invalid, NotYou, SittingMissing, StateUnreadable, SittingUpdating, SlowDown],
+      error: [
+        Invalid,
+        NotYou,
+        SittingMissing,
+        StateUnreadable,
+        SittingUpdating,
+        SittingRefused,
+        CallUnchecked,
+        SlowDown,
+      ],
     }).middleware(PlayBodyErrors),
   )
   .middleware(Player)

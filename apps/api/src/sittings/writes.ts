@@ -1,5 +1,5 @@
 /**
- * Keeping a sitting: one transaction that checks the `rev` it was read at and writes it, with
+ * Keeping a sitting: one transaction (a step of a larger one, inside one) that checks the `rev` it was read at and writes it, with
  * everything that follows from it: the Coins its members are owed, paid once within what each may
  * still earn; seats taken and freed; the place of each member it puts out, or first; what it logs;
  * and the answers to the commands that changed it. What is stored having moved on, or a seat taken meanwhile at another
@@ -22,6 +22,8 @@ import { sittingsTold } from "./told.ts";
 export class Lost extends Data.TaggedError("Lost") {}
 /** As many sittings are not over as may be (`MOST_NOT_OVER`): a new one is not kept. */
 export class Full extends Data.TaggedError("Full") {}
+/** The launch in a Discord call a new sitting was for has one not over, made meanwhile: the new one is not kept. */
+export class Taken extends Data.TaggedError("Taken") {}
 
 /** How many sittings may be not over at once; opening one past it is refused. */
 export const MOST_NOT_OVER = 500;
@@ -219,15 +221,17 @@ export const sittingWrites = Effect.gen(function* () {
             }),
           )
           .pipe(Effect.catchTag("SqlError", Effect.die));
-        if (changed) tell(id, rev, from.sitting, after);
+        // Told once it is kept for good: inside a larger step that is undone, nobody is told of it.
+        if (changed) yield* sql.afterCommit(Effect.sync(() => tell(id, rev, from.sitting, after)));
         return { rev, sitting: after };
       }),
     /**
      * Stores a new sitting, its opener seated and the opening logged, in one transaction that counts
      * the sittings not over first: `Full` at `MOST_NOT_OVER`, `Lost` when the opener is seated at
-     * another. Either way nothing is kept. Once it is kept, the open tables' room is told (`told.ts`).
+     * another; with `call`, the launch in a Discord call it is for sits at it, `Taken` when that has
+     * one not over. Whichever, nothing is kept. Once it is kept, the open tables' room is told (`told.ts`).
      */
-    create: (id: string, t: Sitting, now: number) =>
+    create: (id: string, t: Sitting, now: number, call?: string) =>
       Effect.gen(function* () {
         const by = parsePlayerId(t.by);
         if (by === undefined) return yield* Effect.die(new Error(`A sitting opened by ${t.by}`));
@@ -237,10 +241,11 @@ export const sittingWrites = Effect.gen(function* () {
               if ((yield* store.notOver) >= MOST_NOT_OVER) return yield* new Full();
               yield* store.create(id, by, now, writingOf(t, encodeSitting(t)));
               yield* follow(id, null, t, [], now);
+              if (call !== undefined && !(yield* store.call(call, id, now))) return yield* new Taken();
             }),
           )
           .pipe(Effect.catchTag("SqlError", Effect.die));
-        tell(id, 0, null, t);
+        yield* sql.afterCommit(Effect.sync(() => tell(id, 0, null, t)));
       }),
   };
 });

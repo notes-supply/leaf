@@ -29,7 +29,7 @@ import {
 } from "../../api/errors.ts";
 import { Identities } from "../../auth/session.ts";
 import { leafCookies, SignIns } from "../../auth/sign-ins.ts";
-import { AppConfig } from "../../config.ts";
+import { AppConfig, fromLeafPage } from "../../config.ts";
 import { Logins } from "../../players/logins.ts";
 import { RequestNote } from "../observe.ts";
 import { cookieOf } from "../sign-in.ts";
@@ -106,7 +106,8 @@ export const sessionChecks = Effect.gen(function* () {
   const identities = yield* Identities;
   const signIns = yield* SignIns;
   const logins = yield* Logins;
-  const { publicOrigin } = yield* AppConfig;
+  const settings = yield* AppConfig;
+  const { publicOrigin } = settings;
   const bearerToken = HttpApiBuilder.securityDecode(HttpApiSecurity.bearer);
   const cookieToken = HttpApiBuilder.securityDecode(SessionCookie);
 
@@ -176,7 +177,7 @@ export const sessionChecks = Effect.gen(function* () {
         return yield* admit(Redacted.value(yield* bearerToken));
       }
       const request = yield* HttpServerRequest.HttpServerRequest;
-      if (request.headers["origin"] !== publicOrigin) {
+      if (!fromLeafPage(settings, request.headers["origin"])) {
         return yield* new BadOrigin({ code: "bad_origin", message: "Leaf takes this only from its own pages" });
       }
       return cookie === "" ? yield* admitLeaf(leaf) : yield* admitEither(cookie);
@@ -192,7 +193,7 @@ export const sessionChecks = Effect.gen(function* () {
       }
       // Another site's page can make a browser send the cookie, but not with Leaf's own origin.
       const request = yield* HttpServerRequest.HttpServerRequest;
-      if (!SAFE_METHODS.has(request.method) && request.headers["origin"] !== publicOrigin) {
+      if (!SAFE_METHODS.has(request.method) && !fromLeafPage(settings, request.headers["origin"])) {
         return yield* new BadOrigin({ code: "bad_origin", message: "Leaf takes this only from its own pages" });
       }
       return cookie === "" ? yield* admitLeaf(leaf) : yield* admitEither(cookie);

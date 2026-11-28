@@ -40,7 +40,25 @@ describe("settings", () => {
       gameSignInUrl: "https://api.seqwawa.com/auth/web/start?return_to=",
       gameLeafSpending: false,
       liveMostPlayers: LIVE_MOST_PLAYERS,
+      activity: undefined,
     });
+  });
+
+  it("has the raid in a Discord call with both of its variables, its secret kept out of print, and none with one", () => {
+    const both = readSettings({
+      LEAF_ACTIVITY_CLIENT_ID: "1576204968619417712",
+      LEAF_ACTIVITY_CLIENT_SECRET: "s3cret",
+    });
+
+    expect(both.activity?.clientId).toBe("1576204968619417712");
+    expect(both.activity?.origin).toBe("https://1576204968619417712.discordsays.com");
+    expect(JSON.stringify(both)).not.toContain("s3cret");
+    expect(readSettings({ LEAF_ACTIVITY_CLIENT_ID: "1576204968619417712" }).activity).toBeUndefined();
+    expect(readSettings({ LEAF_ACTIVITY_CLIENT_SECRET: "s3cret" }).activity).toBeUndefined();
+    // An id is digits, so it names one of Discord's hosts and nothing else.
+    expect(() =>
+      readSettings({ LEAF_ACTIVITY_CLIENT_ID: "evil.example/x", LEAF_ACTIVITY_CLIENT_SECRET: "s3cret" }),
+    ).toThrow();
   });
 
   it("holds as many players in Live as LIVE_MOST_PLAYERS says, and refuses anything but a whole number above 0", async () => {

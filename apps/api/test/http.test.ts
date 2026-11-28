@@ -107,6 +107,7 @@ describe("HTTP", () => {
       "/v1/game/raid/held",
       "/v1/game/requests",
       "/v1/game/sittings",
+      "/v1/game/sittings/call",
       "/v1/game/sittings/record",
       "/v1/game/sittings/{id}",
       "/v1/game/skins/{uuid}",

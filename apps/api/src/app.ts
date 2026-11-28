@@ -15,6 +15,7 @@ import { Events } from "./events/store.ts";
 import { Mojang } from "./game/mojang.ts";
 import { PlayerNames } from "./game/names.ts";
 import { Skins } from "./game/skins.ts";
+import { ActivityRoutes } from "./http/activity.ts";
 import { ApiRoutes, NotFound } from "./http/handlers.ts";
 import { SafetyHeaders } from "./http/headers.ts";
 import { Observed } from "./http/observe.ts";
@@ -34,6 +35,7 @@ import { PlayStore } from "./play/store.ts";
 import { Logins } from "./players/logins.ts";
 import { Purchases } from "./purchases/store.ts";
 import { Quests } from "./quests/store.ts";
+import { CallMembers } from "./sittings/members.ts";
 import { Sittings } from "./sittings/service.ts";
 import { Tallies } from "./tally/store.ts";
 
@@ -43,7 +45,7 @@ import { Tallies } from "./tally/store.ts";
  */
 export const Routes = Layer.mergeAll(
   // Each answered request is counted, and 5xx and slow ones logged; the live connection counts its own.
-  Layer.mergeAll(ApiRoutes, Pages, NotFound, SignInRoutes).pipe(Layer.provide(Observed.layer)),
+  Layer.mergeAll(ApiRoutes, Pages, NotFound, SignInRoutes, ActivityRoutes).pipe(Layer.provide(Observed.layer)),
   LiveRoute,
   SafetyHeaders,
 ).pipe(Layer.provide(Identities.layer));
@@ -137,7 +139,8 @@ export const Stores = Layer.mergeAll(
  */
 export const Services = Layer.mergeAll(
   Play.layer,
-  Sittings.layer,
+  // The sittings ask Discord who is in a call before seating anyone at a call's sitting.
+  Sittings.layer.pipe(Layer.provideMerge(CallMembers.layer)),
   Credits.layer,
   Live.layer.pipe(Layer.provide(LiveTuned)),
 ).pipe(

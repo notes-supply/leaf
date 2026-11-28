@@ -38,6 +38,7 @@ import {
 
 import { glyph, itemIcon, traitIcon } from "../art/icons.ts";
 import { paintLook } from "../art/place.ts";
+import { inCall } from "../call/launch.ts";
 import { snd } from "../sounds.ts";
 import { ask, pagesKey, S, type Slot } from "../state.ts";
 import { figPic, pic } from "./cards.ts";
@@ -446,18 +447,22 @@ function looks(): HTMLElement {
  * The front page in its panel, once the page has been told what it asks for. Its title bar holds,
  * besides the gear, the news of a room taken (`takenLine`) and Leave the table, which is always in
  * the window however short it is (on a phone its picture alone); the foot has Leave the table too.
+ * In a Discord call neither is there.
  */
 const frontPage = (): HTMLElement | null => {
   if (!asks) return null;
   const leave = asks.leave;
   const body = frontBody({ ...asks, open: showPage, redraw: () => renderPages(true) });
-  const out = el(
-    "button",
-    "k-btn wood sm",
-    { type: "button", id: "leave-top", "aria-label": "Leave the table", onclick: () => leave() },
-    icon("back"),
-    el("span", "wide-only", { text: "Leave the table" }),
-  );
+  // In a Discord call there is no town to go back to.
+  const out = inCall()
+    ? null
+    : el(
+        "button",
+        "k-btn wood sm",
+        { type: "button", id: "leave-top", "aria-label": "Leave the table", onclick: () => leave() },
+        icon("back"),
+        el("span", "wide-only", { text: "Leave the table" }),
+      );
   return panel("The Little Raid", pic(glyph("swords")), body, false, "front", [takenLine(), out]);
 };
 

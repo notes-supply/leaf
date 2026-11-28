@@ -18,11 +18,15 @@ import type { Member, Sitting } from "@sequoia-leaf/raid/sitting/sitting.ts";
 import { type SittingView, sittingView } from "@sequoia-leaf/raid/sitting/view.ts";
 import { Clock, Context, Effect, Layer, Option, RcMap, Schema, Semaphore } from "effect";
 import { SecureRandom } from "effect/crypto";
+import { SqlClient } from "effect/sql";
 
 import { PlayerNames } from "../game/names.ts";
 import { Coins } from "../play/coins.ts";
 import { PlayPace } from "../play/pace.ts";
 import { PlayStore } from "../play/store.ts";
+import type { DiscordId } from "../wire.ts";
+import { admitOf, type Joining, joinOf } from "./calls.ts";
+import { CallMembers } from "./members.ts";
 import type { Record } from "./store.ts";
 import { type Answer, ANSWERS, type Loaded, type Lost, MOST_NOT_OVER, sittingWrites } from "./writes.ts";
 
@@ -35,10 +39,14 @@ export const KEPT_MS = DAY_MS;
 /** How many times in all a job is done, each from what is stored, when what is stored moves on under it. */
 const TRIES = 3;
 
-/** Who calls: their Leaf id, and the name their session gave, should Leaf have none of its own for them. */
+/**
+ * Who calls: their Leaf id, the name their session gave, should Leaf have none of its own for them,
+ * and their Discord account if their session names one (whom Discord may have in a call).
+ */
 export interface Caller {
   readonly playerId: PlayerId;
   readonly username: string;
+  readonly discord: DiscordId | null;
 }
 
 /** A sitting as a caller is shown it: its id and `rev`, Leaf's clock, the view, and the caller's balances. */
@@ -69,7 +77,9 @@ export type Opening =
   | { readonly status: "full" }
   /** The caller opened one less than `OPEN_EVERY_MS` ago. */
   | { readonly status: "too_soon" }
-  | { readonly status: "slow" };
+  | { readonly status: "slow" }
+  /** The launch in a Discord call it was for has one not over, made meanwhile: nothing was opened. */
+  | { readonly status: "taken" };
 
 export type Sending =
   | ({ readonly status: "done"; readonly results: readonly Result[] } & Shown)
@@ -77,7 +87,11 @@ export type Sending =
   | { readonly status: "unreadable" }
   | { readonly status: "updating" }
   | { readonly status: "invalid"; readonly why: string }
-  | { readonly status: "slow" };
+  | { readonly status: "slow" }
+  /** A sit at a call's sitting by someone Discord does not have in the call: nothing was done. */
+  | { readonly status: "not_in_call" }
+  /** A sit at a call's sitting while Discord cannot say who is in the call: nothing was done. */
+  | { readonly status: "unchecked" };
 
 /** An open sitting to sit at: its id, whoever opened it, how many sat, and the moment it closes. */
 export interface Listed {
@@ -95,7 +109,7 @@ export interface Listing {
 }
 
 /** A command as it came, read, with its id. */
-interface Sent {
+export interface Sent {
   readonly id: string;
   readonly command: SittingCommand;
 }
@@ -156,12 +170,14 @@ const parts = Effect.gen(function* () {
     coins: yield* Coins,
     names: yield* PlayerNames,
     pace: yield* PlayPace,
+    members: yield* CallMembers,
+    sql: yield* SqlClient.SqlClient,
     dice: random.intBetween(0, 0xffffffff),
     inLane: <A, E, R>(id: string, effect: Effect.Effect<A, E, R>) =>
       Effect.scoped(Effect.flatMap(RcMap.get(lanes, id), (lane) => lane.withPermit(effect))),
   };
 });
-type Parts = Effect.Success<typeof parts>;
+export type Parts = Effect.Success<typeof parts>;
 
 /** The jobs every route shares: a sitting read, brought to the clock, and shown. */
 function jobsOf({ writes, store, coins, names, inLane }: Parts) {
@@ -211,7 +227,31 @@ function jobsOf({ writes, store, coins, names, inLane }: Parts) {
     Effect.map(names.of([playerId]), (named) => named.get(playerId) ?? username);
   return { job, load, bring, shown, freeUp, nameOf };
 }
-type Jobs = ReturnType<typeof jobsOf>;
+export type Jobs = ReturnType<typeof jobsOf>;
+
+/**
+ * A new sitting with the caller sat at it, opened at `now`; with `call`, the sitting of that launch in a
+ * Discord call. No lane: nobody knows its id yet. Seated somewhere meanwhile (by another request of
+ * theirs), the last sitting there may be opened meanwhile, or the launch's made meanwhile: nothing is kept.
+ */
+function creatorOf({ writes, dice }: Parts, { shown }: Jobs) {
+  return (caller: Caller, name: string, now: number, call?: string) =>
+    Effect.gen(function* () {
+      const id = `${hex(yield* dice)}${hex(yield* dice)}`;
+      const t = openSitting({ now, seed: yield* dice, player: { id: caller.playerId, name } });
+      const refused = yield* writes.create(id, t, now, call).pipe(
+        Effect.as(null),
+        Effect.catchTags({
+          Lost: () => Effect.succeed<Opening>({ status: "seated_elsewhere" }),
+          Full: () => Effect.succeed<Opening>({ status: "full" }),
+          Taken: () => Effect.succeed<Opening>({ status: "taken" }),
+        }),
+      );
+      if (refused !== null) return refused;
+      return { status: "shown", ...(yield* shown(id, 0, now, t, caller.playerId)) } satisfies Opening;
+    });
+}
+export type Create = ReturnType<typeof creatorOf>;
 
 /** A batch of commands at a sitting, in its lane at `now`: each done in order, then the sitting kept with their answers. */
 function batchOf({ writes, store, playStore, dice }: Parts, { load, shown }: Jobs) {
@@ -248,6 +288,8 @@ function batchOf({ writes, store, playStore, dice }: Parts, { load, shown }: Job
     });
 }
 
+export type Batch = ReturnType<typeof batchOf>;
+
 /**
  * The raid's sittings, as Leaf keeps them. Anyone signed in may open or sit at one, guests too; a
  * player is seated at one sitting at a time, held by the database (`raid_sitting_seats`).
@@ -259,6 +301,11 @@ export class Sittings extends Context.Service<
     readonly list: (player: PlayerId) => Effect.Effect<Listing>;
     /** Opens a sitting with the caller sat at it. */
     readonly open: (caller: Caller) => Effect.Effect<Opening>;
+    /**
+     * Sits the caller at the sitting of a launch in a Discord call (`calls.ts`): everyone who opens
+     * that launch sits at one, the first to come opening it, until it starts.
+     */
+    readonly join: (caller: Caller, instance: string) => Effect.Effect<Joining>;
     /** A sitting brought to Leaf's clock, as the viewer is shown it; or unchanged, for the `rev` the page has. */
     readonly read: (id: string, viewer: PlayerId, rev?: number) => Effect.Effect<Reading>;
     /** Does a batch of commands at a sitting, as they came off the wire, each with its id. */
@@ -273,10 +320,15 @@ export class Sittings extends Context.Service<
     Sittings,
     Effect.gen(function* () {
       const made = yield* parts;
-      const { writes, store, playStore, pace, dice } = made;
+      const { store, playStore, pace } = made;
       const jobs = jobsOf(made);
       const batch = batchOf(made, jobs);
-      return Sittings.of({
+      const create = creatorOf(made, jobs);
+      // The one rule of a call's sitting: Discord has the caller in the call (`calls.ts`).
+      const admit = admitOf(made.members);
+      const tooSoon = (caller: Caller, now: number) =>
+        Effect.map(store.openedSince(caller.playerId, now - OPEN_EVERY_MS), (n) => n > 0);
+      const service: Omit<Sittings["Service"], "join"> = {
         list: (player) =>
           Effect.gen(function* () {
             const now = yield* Clock.currentTimeMillis;
@@ -290,25 +342,11 @@ export class Sittings extends Context.Service<
           Effect.gen(function* () {
             const now = yield* Clock.currentTimeMillis;
             if (!pace.take(caller.playerId, now, [1, 1])) return { status: "slow" } satisfies Opening;
-            if ((yield* store.openedSince(caller.playerId, now - OPEN_EVERY_MS)) > 0)
-              return { status: "too_soon" } satisfies Opening;
+            if (yield* tooSoon(caller, now)) return { status: "too_soon" } satisfies Opening;
             yield* jobs.freeUp(caller.playerId, null);
             if (Option.isSome(yield* store.seatOf(caller.playerId)))
               return { status: "seated_elsewhere" } satisfies Opening;
-            const id = `${hex(yield* dice)}${hex(yield* dice)}`;
-            const player: Member = { id: caller.playerId, name: yield* jobs.nameOf(caller) };
-            const t = openSitting({ now, seed: yield* dice, player });
-            // Seated somewhere meanwhile, by another request of theirs, or the last sitting there may
-            // be opened meanwhile: nothing is kept.
-            const refused = yield* writes.create(id, t, now).pipe(
-              Effect.as(null),
-              Effect.catchTags({
-                Lost: () => Effect.succeed<Opening>({ status: "seated_elsewhere" }),
-                Full: () => Effect.succeed<Opening>({ status: "full" }),
-              }),
-            );
-            if (refused !== null) return refused;
-            return { status: "shown", ...(yield* jobs.shown(id, 0, now, t, caller.playerId)) } satisfies Opening;
+            return yield* create(caller, yield* jobs.nameOf(caller), now);
           }),
         read: (id, viewer, rev) =>
           Effect.gen(function* () {
@@ -334,6 +372,10 @@ export class Sittings extends Context.Service<
             if (!pace.take(caller.playerId, yield* Clock.currentTimeMillis, [1, fresh]))
               return { status: "slow" } satisfies Sending;
             const sits = sent.some((one) => one.command.do === "sit");
+            // A call's sitting seats only someone Discord has in the call, whichever way they ask.
+            const call = sits ? Option.getOrNull(yield* store.callOf(id)) : null;
+            const barred = call === null ? null : yield* admit(caller, call);
+            if (barred !== null) return { status: barred } satisfies Sending;
             if (sits) yield* jobs.freeUp(caller.playerId, id);
             const name = sits ? yield* jobs.nameOf(caller) : caller.username;
             return yield* jobs.job(id, (now) => batch(id, caller, name, sent, now));
@@ -346,7 +388,8 @@ export class Sittings extends Context.Service<
           yield* store.letGo(now - KEPT_MS);
           return due.length;
         }),
-      });
+      };
+      return Sittings.of({ ...service, join: joinOf(made, jobs, { batch, create, admit, tooSoon }) });
     }),
   );
 }

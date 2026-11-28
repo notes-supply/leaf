@@ -3,7 +3,8 @@
  * out; down the left the categories, and under the chosen one its modes; in the middle the chosen
  * mode's card, with its options and its Set out; on the right its board; along the bottom the
  * almanac, how to play, table looks and leaving. A phone has the same, one under another. Whatever
- * is chosen, the card, the board and the button keep their size and place. The endless ways' own
+ * is chosen, the card, the board and the button keep their size and place. In a Discord call it is
+ * the call's table alone (`call/`): the live tables' card, the almanac and how to play. The endless ways' own
  * parts (their boards, rooms held, a room taken) are `woods.ts`'s.
  */
 import { choices, stepped } from "@sequoia-leaf/kit/choices.ts";
@@ -24,6 +25,7 @@ import {
 
 import { type Glyph, glyph, roomIcon } from "../art/icons.ts";
 import { paintLook } from "../art/place.ts";
+import { inCall } from "../call/launch.ts";
 import { liveStrip, tablesBody, tablesFoot, tablesRecord } from "../live/tables.ts";
 import { snd } from "../sounds.ts";
 import { ask, S, type Slot } from "../state.ts";
@@ -37,6 +39,7 @@ import {
   footOf,
   laidOut,
   listed,
+  LIVE_TABLES,
   type Mode,
   type ModeId,
   MODES,
@@ -464,20 +467,24 @@ function bottom(go: FrontAsks): HTMLElement {
       pic(glyph(sign)),
       words,
     );
+  // In a call: nothing bought with Leaf, and no town to go back to.
+  const call = inCall();
   return el(
     "div",
     "k-row menu-foot",
     {},
     to("almanac", "Almanac", "book"),
     to("howto", "How to play", "help"),
-    to("looks", "Table looks", "brush"),
-    el(
-      "button",
-      "k-btn wood sm",
-      { type: "button", id: "leave", onclick: () => go.leave() },
-      icon("back"),
-      "Leave the table",
-    ),
+    call ? null : to("looks", "Table looks", "brush"),
+    call
+      ? null
+      : el(
+          "button",
+          "k-btn wood sm",
+          { type: "button", id: "leave", onclick: () => go.leave() },
+          icon("back"),
+          "Leave the table",
+        ),
   );
 }
 
@@ -499,10 +506,10 @@ export function frontBody(asked: FrontAsks): HTMLElement {
   const go = backFirst(asked);
   readNow("guild", () => readGuild(go.redraw));
   const at = atNow();
-  const shown = shownModes(MODES);
-  const mode = shown.find((m) => m.id === kept.mode) ?? THE_TRAILS;
+  const shown = shownModes(inCall() ? [LIVE_TABLES] : MODES);
+  const mode = shown.find((m) => m.id === kept.mode) ?? shown[0] ?? THE_TRAILS;
   readWoods(mode, at, go.redraw);
-  const runs = laidOut(at);
+  const runs = inCall() ? [] : laidOut(at);
   const live = liveStrip();
   // The strips, the categories, the card and the board scroll between the title bar and the foot.
   return el(
