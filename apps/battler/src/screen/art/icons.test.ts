@@ -12,11 +12,12 @@ import { GLYPHS } from "./icons.ts";
 const read = async (): Promise<ReadonlyMap<string, readonly string[]>> =>
   readRows(await Bun.file(new URL("icons.txt", import.meta.url)).text());
 
-test("icons.txt has a picture for every trait, item, tool, kind of room, rule and sign, a boon's own for each that is not a charm, a number for each level, and nothing else", async () => {
+test("icons.txt has a picture for every trait, item, tool, held component, kind of room, rule and sign, a boon's own for each that is not a charm, a number for each level, and nothing else", async () => {
   const named = [...(await read()).keys()];
   const wanted = [
     ...TRAIT_IDS.map((id) => `trait ${id}`),
     ...[...COMPONENT_IDS, ...FINISHED_IDS, ...TOOL_IDS].map((id) => `item ${id}`),
+    ...COMPONENT_IDS.map((id) => `held ${id}`),
     ...BOON_IDS.filter((id) => !isEmblemId(id)).map((id) => `boon ${id}`),
     ...["trouble", "spar", "boss"].map((kind) => `room ${kind}`),
     ...RULE_IDS.map((id) => `rule ${id}`),

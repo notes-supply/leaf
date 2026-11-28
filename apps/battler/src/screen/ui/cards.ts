@@ -485,7 +485,7 @@ export function boonDesc(cat: Catalog, id: BoonId): Description {
   const kin = giftsTrait(cat, id);
   return {
     name: spec.name,
-    icon: boonIcon(id),
+    icon: boonIcon(cat, id),
     brief: boonShort(cat, id),
     tag: spec.sort === "charm" ? "A charm" : "A boon",
     blocks: [{ body: rich(boonShort(cat, id)) }],

@@ -121,7 +121,7 @@ function toolCard(tool: ToolId): HTMLElement[] {
 function boonCardParts(cat: Catalog, boon: BoonId): HTMLElement[] {
   const spec = boonIn(cat, boon);
   return [
-    art(boonIcon(boon), boonRef(boon)),
+    art(boonIcon(cat, boon), boonRef(boon)),
     el("b", "k-gold", { text: spec.name }),
     el("div", "k-dim", { text: spec.sort === "charm" ? "A charm" : "A boon" }),
     rich(boonShort(cat, boon)),
@@ -166,7 +166,8 @@ async function take(index: number, card: HTMLElement): Promise<void> {
   const rack = (): { x: number; y: number } => boardSpot(document.getElementById("rack")) ?? from;
   for (const note of done.notes) {
     if (note.t === "component") fly(itemPic(note.item), from, rack(), { dur: 0.5, arc: 20, land: () => snd.give() });
-    else if (note.t === "boon") fly(boonIcon(note.boon), from, rack(), { dur: 0.55, arc: 24, land: () => snd.give() });
+    else if (note.t === "boon")
+      fly(boonIcon(catalogOf(run), note.boon), from, rack(), { dur: 0.55, arc: 24, land: () => snd.give() });
     else if (note.t === "items") {
       note.items.forEach((item, i) =>
         fly(itemPic(item), from, rack(), { delay: 0.15 + i * 0.12, dur: 0.5, arc: 20, land: () => snd.give() }),

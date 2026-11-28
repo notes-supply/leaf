@@ -1,6 +1,22 @@
-/** The colours that mean something on the table: each trait. The letters' colours are `@sequoia-leaf/figures`'. */
-import { BARK, CORAL, EARTH, GOLD, GREEN, LEAF, PAPER, SKY, STONE, WATER } from "@sequoia-leaf/kit/palette.ts";
+/** The colours that mean something on the table: each trait, each component. The letters' colours are `@sequoia-leaf/figures`'. */
+import { BARK, CORAL, CREAM, EARTH, GOLD, GREEN, LEAF, PAPER, SKY, STONE, WATER } from "@sequoia-leaf/kit/palette.ts";
+import type { ComponentId } from "@sequoia-leaf/raid/content/items.ts";
 import type { TraitId } from "@sequoia-leaf/raid/content/traits.ts";
+
+/**
+ * Each component's colour, its shade and its light (`RAID-BOARD.md` section 10). A finished item's
+ * frame and its held tile are its two components' lights. No two lights are within ΔE 30 of each
+ * other, nor two shades (`board.test.ts`).
+ */
+export const COMPONENT_TONE: Readonly<Record<ComponentId, { readonly shade: string; readonly light: string }>> = {
+  thorn: { shade: "#b0483a", light: CORAL },
+  plume: { shade: GOLD[0], light: GOLD[1] },
+  glowcap: { shade: WATER[1], light: WATER[2] },
+  bark: { shade: EARTH[0], light: EARTH[2] },
+  chestnut: { shade: GREEN[2], light: GREEN[4] },
+  // A stone blade with a cream edge: the only grey, and the only light near white.
+  knife: { shade: STONE[2], light: CREAM },
+};
 
 /** A colour for each trait: its chip, its icon's ground, and what its abilities look like in the air. */
 export const TRAIT_COLOUR: Readonly<Record<TraitId, string>> = {

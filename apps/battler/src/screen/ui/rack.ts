@@ -68,7 +68,12 @@ export function renderRack(run: RunView): void {
     const boons = el("div", "k-plaque boons", {});
     for (const boon of run.boons) {
       const { name } = boonIn(catalogOf(run), boon);
-      const slot = el("button", "k-slot boon", { type: "button", "aria-label": name }, pic(boonIcon(boon)));
+      const slot = el(
+        "button",
+        "k-slot boon",
+        { type: "button", "aria-label": name },
+        pic(boonIcon(catalogOf(run), boon)),
+      );
       link(slot, boonRef(boon));
       boons.append(slot);
     }

@@ -1,5 +1,5 @@
 # The small pictures, typed as rows of letters like the figures (`PAL` in the figures' `pal.ts`). A
-# block is a line naming the picture (`trait`, `item`, `boon`, `room`, `rule`, `glyph` or `level`, and which), then its rows.
+# block is a line naming the picture (`trait`, `item`, `held`, `boon`, `room`, `rule`, `glyph` or `level`, and which), then its rows.
 
 # ---------- traits ----------
 
@@ -264,78 +264,136 @@ S...n...S
 ....n....
 
 # ---------- items ----------
+# A component is 12 by 12, a colour and a shape of its own (`COMPONENT_TONE` in `pal.ts`), and 5 by 5
+# as a figure holds it (`held`). A finished item is 10 by 10, drawn in its two components' colours,
+# and framed in their light tones when it is shown (`icons.ts`).
 
 item thorn
-.......b..
-......bb..
-.....bBb..
-....bBBb..
-...bBBb...
-..bBBBb...
-.bBBNBb...
-bBBNNb....
-bBNNb.....
-.bbb......
+.........RR.
+........RrR.
+.......RrhR.
+......RrhR..
+.....RrhrR..
+....RrhrR...
+...RrhrrR...
+..RrrrrR....
+.RrrrrrR....
+RrrrrrR.....
+RRrrRR......
+..RR........
+
+held thorn
+....R
+...rR
+..rR.
+.rR..
+RR...
 
 item plume
-.......hh.
-.....hhph.
-....hphhh.
-...hphhh..
-..hphhh...
-.hphhh....
-.phhh.....
-phh.......
-p.........
+.....ooo....
+...ooyyyo...
+..oyyYYyyo..
+..oyYwYyyo..
+.oyYYwYYyo..
+.oyYwYYyyo..
+.oyYwYyyo...
+..oywYyo....
+..oowyo.....
+...owo......
+....w.......
+...w........
+
+held plume
+..yy.
+.yYy.
+.yYy.
+..y..
+.w...
 
 item glowcap
-...uuuu...
-..uUUUUu..
-.uUWUUUUu.
-uUUUUUWUUu
-uUUUUUUUUu
-.aaaaaaaa.
-...cccc...
-...ccCc...
-...ccCc...
-..ccccCc..
+...aaaaaa...
+.aauuuuuuaa.
+auuUUuuuWuua
+auUWUuuuuuua
+auuuuuuWuuua
+.aAAAAAAAAa.
+...AccccA...
+....cccC....
+....cccC....
+...ccccC....
+...cccCC....
+....CCC.....
+
+held glowcap
+.uuu.
+uUuUu
+uuuuu
+..c..
+..c..
 
 item bark
-.nnnnnnn..
-nNNnNNNnn.
-nNnnNNnNn.
-nNNnNnnNnn
-nnNnNNnNNn
-nNNnnNnNNn
-nNnNNNnnNn
-.nNNnNNnNn
-.nnNNnNNnn
-..nnnnnnn.
+.mmmmmmmmm..
+mEfEefEEeEm.
+mffEeEfEefEm
+mEfEeEfEeEfm
+mEEfeEEfeEfm
+mffEefEEeEEm
+mEfEeEfEefEm
+mEEfeEfEeEfm
+mEfEeEEfeEfm
+mEffeEfEeEEm
+.mEfefEEeEm.
+..mmmmmmmm..
+
+held bark
+.EEE.
+EfEfE
+EeEeE
+EfEfE
+.EEE.
 
 item chestnut
-...BBBB...
-..BnnnnB..
-.BnNNnnnB.
-BnNNnnnnnB
-BnnnnnnnnB
-BnnnccnnnB
-BnnccccnbB
-.BnccccbB.
-..BBbbBB..
-...bbbb...
+.l..l..l..l.
+..lGlGGlGl..
+l.GGGGGGGG.l
+.lGGlGGGlGl.
+lGGGGnnGGGGl
+.GGGnNNnGGG.
+lGGnNwNNnGGl
+.GGnNNNNnGG.
+lGGGnnnnGGGl
+.lGGGGGGGGl.
+..lGlGGlGl..
+.l..l..l..l.
 
-# The Carving Knife: the gnomes' own, its blade worn thin.
+held chestnut
+l.l.l
+.GGG.
+lGnGl
+.GGG.
+l.l.l
+
+# The Carving Knife: the gnomes' own, a stone blade with a cream edge on a riveted handle. It lies flat: no other is long and low.
 item knife
-.........S
-........St
-.......St.
-......St..
-.....St...
-....St....
-...SN.....
-..nN......
-.nN.......
-.n........
+............
+............
+............
+.....TtttttS
+nnnnnTSSSSSw
+BtBtBTSSSSS.
+BBBBBTSSSSw.
+bbbbbTSSww..
+.....Tww....
+............
+............
+............
+
+held knife
+.....
+...tS
+nnSSw
+BBSw.
+.....
 
 item blackthorn
 ..w....m..
@@ -350,51 +408,52 @@ wWw.mm....
 ......mm..
 
 item wasptail
-.........t
-........tt
-.......yy.
-......xx..
-.....yy...
-....xx....
-...yy.....
-..xx......
-.UU.......
-UU........
+.......YY.
+......YyyY
+.....oyyY.
+....RRoo..
+...yyRR...
+..RRyy....
+..yRR.....
+.RRy......
+.rR.......
+r.........
 
 item glowthorn
 .......U..
 ......UU..
-.....UuU..
-....UuuU..
-...UuuU.W.
-..UuuuU...
-.UuuauU...
-UuuaaU..W.
-UuaaU.....
+.....UrU..
+....UrrU..
+...UrrU.u.
+..UrrrU...
+.UrrhrU...
+UrrhRU..u.
+UrhRU.....
 .UUU......
 
 item hedgehog
-..b.b.b...
-.bbnbnbb..
-bbnbnbnbb.
-.bnbnbnbbb
-bbbnbnbncc
-.bnbnbncck
-bbbnbncccc
-.bbbbccc..
-..b..b....
+..r.r.r...
+.rRrRrR...
+rRERERER..
+.RERERERr.
+rEREREREff
+.eEREReffk
+reEEEEefff
+.eeeeeeff.
+..e..e....
+..........
 
 item conker
-......c...
-.....c....
-....c.....
-....c.....
-...BBBB...
-..BnNNnB..
-.BnNnnnnB.
-.BnnnccnB.
-.BnncccbB.
-..BBbbBB..
+....R.....
+....r.....
+....R.....
+..l.r.l...
+.l.gGGg.l.
+..gGGGGg..
+lgGGRRGGgl
+.gGRhrRGg.
+lgGGRRGGgl
+..ggggggl.
 
 item hummingbird
 ..........
@@ -409,40 +468,40 @@ kklkLl....
 ..........
 
 item mothlantern
-....bb....
-...bbbb...
-..b....b..
-..bYYYYb..
-..bYwwYb..
-..bYcNcb..
-..bYwwYb..
-..bYYYYb..
-..bbbbbb..
-...b..b...
+....oo....
+...o..o...
+...oyyo...
+..oyyyyo..
+..oUUUUo..
+..oUyyUo..
+..oyUUyo..
+..ouUUuo..
+..oooooo..
+...oyyo...
 
 item quilt
-.rr....uu.
-rrrr..uuuu
-rrryyllluu
-.rryylllu.
-.uuurrryy.
-.uuurrryy.
-.llyyuurr.
-.llyyuurr.
-.rrlllyyu.
-.rrlllyyu.
+..ee..ee..
+..ey..ye..
+.eyy..yye.
+eyyy..yyye
+effyyyyffe
+effyeeyffe
+eyyfeefyye
+eyyfeefyye
+effyeeyffe
+.eeeeeeee.
 
 item honeycake
 ..........
-....yy....
+....YY....
 ..yyYYyy..
-.yYYYYYYy.
-yYYyyYYYYy
-oyyYYyyyyo
-oNNooNNNNo
-oNNNNNNNNo
-.oNNNNNNo.
-..oooooo..
+.yYYyyYYy.
+.oyyyyyyo.
+.oYoYYoYo.
+.oooooooo.
+lGGGGGGGGl
+.lGgGGgGl.
+..llllll..
 
 item fairyring
 ...rr.rr..
@@ -457,28 +516,28 @@ rwr....rwr
 ..........
 
 item lichen
-...tttt...
-..t....t..
-..t....t..
-...tssst..
-..sGGGGs..
-.sGlGGlGs.
-.sGGLLGGs.
-.sGlGGGGs.
-..sGGlGs..
-...ssss...
+...ffff...
+..f....f..
+..f....f..
+...feef...
+..eEEEEe..
+.eEUuUEEe.
+.eUUuUUEe.
+.eEuUUuEe.
+..eEUuEe..
+...eeee...
 
 item stewpot
-...W..W...
-..W..W....
-...W..W...
-.TTTTTTTT.
-TssssssssT
-.TsSSsssT.
-.TsSsssTT.
-.TssssssT.
-..TTTTTT..
-..T....T..
+..U...U...
+...U...U..
+..U...U...
+.AAAAAAAA.
+AGlGGlGGlA
+AaGGGGGGaA
+.auuuuuua.
+.auUuuuua.
+..aaaaaa..
+..a....a..
 
 item stump
 ..nnnnnn..
@@ -494,14 +553,14 @@ nooNNNNooN
 
 item hollowlog
 ..........
-..nnnnnnn.
-.nNNNNNNNn
-nmmnNnNNNn
-mmmmnNNnNn
-mmmmnNnNNn
-nmmnNNNNNn
-.nnnnnnnn.
-..l...G...
+....l.l.l.
+..lGGlGGlG
+.fGGGEGGGe
+fmmfEEfEEe
+fmmfEfEEfe
+fmmfEEEfEe
+.fffeeeeee
+..g...G...
 ..........
 
 item hoard

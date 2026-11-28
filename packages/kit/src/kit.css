@@ -1020,9 +1020,10 @@ button.k-info-stat:hover .k-label,
   grid-template-columns: repeat(4, minmax(min-content, 1fr));
   gap: calc(var(--u) * 3);
 }
+/* Room inside its frame for a picture 14 wide: the raid's items, with their edge. */
 .k-slot.k-info-icon {
-  width: calc(var(--u) * 16);
-  height: calc(var(--u) * 16);
+  width: calc(var(--u) * 18);
+  height: calc(var(--u) * 18);
 }
 /* "This with that makes": the other half, an arrow, and what they make. */
 .k-info-make {

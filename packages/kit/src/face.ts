@@ -218,8 +218,10 @@ export const actionSpend = (card: Ref, a: Action): Spend => ({
 
 /**
  * A canvas's picture fitted into a box `box` units square: by whole steps (at most `most`) where it
- * fits, and shrunk to the box where it does not.
+ * fits, and shrunk to the box where it does not. One at most `WHOLE` over the box is drawn whole:
+ * shrinking it would only drop a row or two of its pixels (the raid's framed items are 14, in 12).
  */
+const WHOLE = 2;
 function fit(art: Node, box: number, most = 1): Node {
   // One of the kit's own icons grows by its own whole steps.
   if (art instanceof HTMLElement && art.classList.contains("k-i")) {
@@ -233,7 +235,7 @@ function fit(art: Node, box: number, most = 1): Node {
   c.getContext("2d")?.drawImage(art, 0, 0);
   c.className = "k-px";
   const side = Math.max(art.width, art.height, 1);
-  const scale = side > box ? box / side : Math.min(most, Math.max(1, Math.floor(box / side)));
+  const scale = side > box + WHOLE ? box / side : Math.min(most, Math.max(1, Math.floor(box / side)));
   c.style.width = `calc(var(--u) * ${art.width * scale})`;
   c.style.height = `calc(var(--u) * ${art.height * scale})`;
   return c;

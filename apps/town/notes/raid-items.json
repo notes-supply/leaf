@@ -1,0 +1,21 @@
+{
+  "id": "raid-items",
+  "at": "2026-11-28T13:00Z",
+  "title": "The Little Raid: items you can tell apart",
+  "lines": [
+    "In The Little Raid, each component has its own colour and shape.",
+    "A finished item has a frame in the colours of the two components it is made of."
+  ],
+  "more": [
+    {
+      "head": "Also",
+      "points": [
+        "Components are drawn bigger, with more detail.",
+        "Ten finished items have new pictures.",
+        "An emblem has a frame in its trait's colour.",
+        "Over a figure, a finished item is a square of its two colours with a gold edge.",
+        "The Carving Knife has a new picture. Two Knives make An Extra Chair, which has a cream frame."
+      ]
+    }
+  ]
+}

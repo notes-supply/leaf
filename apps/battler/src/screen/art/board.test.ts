@@ -1,7 +1,8 @@
 /**
  * The board's value budget (`RAID-BOARD.md` section 12), from the figures' own rows and the board's
  * tones, with no canvas: the faces' lightness, the grooves' step, the ink edge against a face, how
- * much of each figure sinks into a face, and the two halves apart. Colours are CIELAB (sRGB, D65).
+ * much of each figure sinks into a face, the two halves apart, and the components' colours apart.
+ * Colours are CIELAB (sRGB, D65).
  */
 import { describe, expect, test } from "bun:test";
 
@@ -13,9 +14,11 @@ import { eraOf, RELEASES } from "@sequoia-leaf/raid";
 import { catalogAt } from "@sequoia-leaf/raid/content/catalog.ts";
 import { SUMMON_IDS, TROUBLE_IDS, type UnitKind } from "@sequoia-leaf/raid/content/figures.ts";
 import { hasTrueForm } from "@sequoia-leaf/raid/content/graid.ts";
+import { COMPONENT_IDS } from "@sequoia-leaf/raid/content/items.ts";
 
 import { COMMODORE, type Crew, CREW_FRONT, GROOTERS } from "../../../review/crew.ts";
 import { BENCH, BOARD, CLOTHS, type HexTones, quietOf, RIM } from "./board.ts";
+import { COMPONENT_TONE } from "./pal.ts";
 import { WARM } from "./table.ts";
 
 /** A channel (0 to 255) as linear light, and lightness's curve. */
@@ -105,6 +108,14 @@ const MUD: Readonly<Record<string, number>> = {
 };
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
+/** Every pair of components whose lights (or shades) are nearer than ΔE 30, with how near. */
+const nearComponents = (tone: "light" | "shade"): string[] =>
+  COMPONENT_IDS.flatMap((a, i) =>
+    COMPONENT_IDS.slice(i + 1).flatMap((b) => {
+      const d = dE(COMPONENT_TONE[a][tone], COMPONENT_TONE[b][tone]);
+      return d < 30 ? [`${a}/${b} ${Math.round(d)}`] : [];
+    }),
+  );
 
 describe("the board's value budget", () => {
   test("every rule is checked against the figures it is about", () => {
@@ -172,5 +183,9 @@ describe("the board's value budget", () => {
       const apart = L(s.near.face) - L(s.far.face);
       expect([id, apart >= s.apart, apart <= 12]).toEqual([id, true, true]);
     }
+  });
+
+  test("5. the six components' lights differ pairwise by ΔE 30 or more, and so do their shades", () => {
+    expect([COMPONENT_IDS.length, nearComponents("light"), nearComponents("shade")]).toEqual([6, [], []]);
   });
 });

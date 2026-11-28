@@ -356,6 +356,10 @@ body.rack-open #rack .made .item {
   width: calc(var(--u) * 16);
   height: calc(var(--u) * 16);
 }
+/* A picture wider than its tile's inside (an item is 14, a phone's tile 9 inside) spills evenly both ways, never only to the right. */
+#rack .k-slot {
+  place-content: unsafe center;
+}
 /* An item in the hand: the components it would forge with pulse, and the one it is over is bright. */
 #rack .item {
   position: relative;
