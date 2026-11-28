@@ -539,3 +539,30 @@ body[data-live] #live-say:not([hidden]) {
     width: 100%;
   }
 }
+
+/* ---------- in a Discord call (`call/`): Discord's small picture of it ---------- */
+
+/* The table's one line, shown only when Discord makes the raid small: everything else goes, and nothing can be pressed. */
+.call-line {
+  display: none;
+}
+@media (max-width: 480px) and (max-height: 280px) {
+  body[data-call] > :not(.call-line) {
+    display: none !important;
+  }
+  body[data-call] .call-line {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-height: 100dvh;
+    margin: 0;
+    padding: 0 calc(var(--u) * 8);
+    font: var(--f-ui);
+    color: var(--k-cream);
+    text-align: center;
+    background: var(--k-deep);
+    pointer-events: none;
+    user-select: none;
+  }
+}

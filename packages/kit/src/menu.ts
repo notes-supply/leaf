@@ -53,6 +53,8 @@ export interface MenuOf {
   readonly keys: KeyList;
   /** Tabs of the page's own, after Sound, Keys and Account. */
   readonly tabs?: readonly MenuTab[];
+  /** Whether there is an Account tab where the page is live as somebody: not where Discord signed them in, in a call. */
+  readonly account?: boolean;
   /** Told as the menu opens (true) and is put away (false): the page lets go of held keys and takes no play while it is open. */
   readonly opened?: (open: boolean) => void;
 }
@@ -140,7 +142,9 @@ class SettingsMenu implements Menu {
     });
     const w = where();
     const account: MenuTab[] =
-      w.mode === "live" ? [{ id: "account", name: "Account", draw: () => accountPage(w.me, w.signIn) }] : [];
+      w.mode === "live" && of.account !== false
+        ? [{ id: "account", name: "Account", draw: () => accountPage(w.me, w.signIn) }]
+        : [];
     this.#tabsOf = [
       { id: "sound", name: "Sound", draw: (keep) => this.#soundPage(keep) },
       { id: "keys", name: "Keys", draw: (keep) => this.#keys.draw(keep) },

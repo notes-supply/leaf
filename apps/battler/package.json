@@ -4,10 +4,11 @@
   "type": "module",
   "scripts": {
     "dev": "bun --hot index.html",
-    "build": "bun build index.html --outdir dist --minify",
+    "build": "bun build index.html --outdir dist --minify --splitting",
     "test": "bun test"
   },
   "dependencies": {
+    "@discord/embedded-app-sdk": "2.5.0",
     "@sequoia-leaf/core": "workspace:*",
     "@sequoia-leaf/figures": "workspace:*",
     "@sequoia-leaf/kit": "workspace:*",
